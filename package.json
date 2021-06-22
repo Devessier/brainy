@@ -6,9 +6,14 @@
   "license": "GPL-3.0",
   "private": false,
   "scripts": {
+    "docs:copy:readme": "cp README.md docs/index.md",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "yarn generate:code-snippets && yarn docs:copy:readme && vitepress build docs",
+    "docs:serve": "vitepress serve docs",
     "generate:code-snippets": "snipsync"
   },
   "devDependencies": {
-    "snipsync": "^1.5.0"
+    "snipsync": "^1.5.0",
+    "vitepress": "^0.15.4"
   }
 }
