@@ -1,4 +1,20 @@
-// @@@SNIPSTART on-off-example
+# brainy
+
+Simple state machine library for Golang.
+
+> ⚠️ Disclaimer ⚠️
+> 
+> The code and the API of this library are heavily inspired by this great article: https://venilnoronha.io/a-simple-state-machine-framework-in-go.
+
+The objective of this library is to have a minimal port of [XState](https://github.com/davidkpiano/xstate) to Golang.
+
+## Quick start
+
+```bash
+go get -u github.com/Devessier/brainy
+```
+
+```go
 package main
 
 import (
@@ -47,5 +63,4 @@ func main() {
 	stateAfterASecondOnEvent := onOffMachine.Current() // on
 	fmt.Printf("state of the state machine after receiving an on event from on state is: %s\n", stateAfterASecondOnEvent)
 }
-
-// @@@SNIPEND
+```
