@@ -7,6 +7,7 @@ import (
 )
 
 func main() {
+	// @@@SNIPSTART on-off-example
 	const (
 		OnState  brainy.StateType = "on"
 		OffState brainy.StateType = "off"
@@ -45,4 +46,5 @@ func main() {
 
 	stateAfterASecondOnEvent := onOffMachine.Current() // on
 	fmt.Printf("state of the state machine after receiving an on event from on state is: %s\n", stateAfterASecondOnEvent)
+	// @@@SNIPEND
 }

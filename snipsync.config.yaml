@@ -1,0 +1,6 @@
+origins:
+  - files:
+    - ./**/*.go
+
+targets:
+  - docs
