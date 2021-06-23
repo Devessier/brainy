@@ -90,6 +90,9 @@ type Context interface{}
 // It takes machine context and returns an event to send to the machine itself, or NoopEvent.
 type Action func(*Machine, Context) (EventType, error)
 
+// Actions is a slice of Action.
+type Actions []Action
+
 // Events map holds events to listen with the state to transition to when triggered.
 type Events map[EventType]StateType
 
@@ -100,7 +103,7 @@ type Events map[EventType]StateType
 // When no events are specified, the state node is of *final* type, which means once reached, the state
 // machine can not be transitioned anymore.
 type StateNode struct {
-	Actions []Action
+	Actions Actions
 	On      Events
 }
 
