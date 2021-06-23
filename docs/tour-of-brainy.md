@@ -117,6 +117,128 @@ func main() {
     lightSwitchStateMachine.Init()
 
     currentState := lightSwitchStateMachine.Current()
-    fmt.Printf("The current state of the state machine is: %s\n", currentState)
+    fmt.Printf("The current state of the state machine is: %s\n", currentState) // off
 }
 ```
+
+## Events
+
+We saw how to use states to define which positions a state machine can take. To go from one state to another one, to _transition_ from one state to another one, we need another tool: events.
+
+To transition from one state to another one, we need to tell brainy which events are expected to be received for each state. By default, if an event is received and it has not been defined for the current state, nothing happens.
+
+Let's define a toggle event to go from `on` to `off` states, and vice versa.
+
+### Define events
+
+With brainy, to define the events we want to catch in a given state, we need to list them in `On` map and say to which state to transition. We must use `brainy.Events` type that is a `map[brainy.EventType]brainy.StateType`. `brainy.EventType` is a string type, and we can use string literals during prototyping.
+
+```go{14-23}
+package main
+
+import (
+    "fmt"
+
+    "github.com/Devessier/brainy"
+)
+
+func main() {
+    lightSwitchStateMachine := brainy.Machine{
+        Initial: "off",
+
+        StateNodes: brainy.StateNodes{
+            "on": brainy.StateNode{
+                On: brainy.Events{
+                    "toggle": "off",
+                },
+            },
+            "off": brainy.StateNode{
+                On: brainy.Events{
+                    "toggle": "on",
+                },
+            },
+        },
+    }
+    lightSwitchStateMachine.Init()
+
+    currentState := lightSwitchStateMachine.Current()
+    fmt.Printf("The current state of the state machine is: %s\n", currentState) // off
+}
+```
+
+### Send events
+
+Now that we defined the transitions, we need to figure out how to send these events to the state machine.
+
+To send an event to the state machine, we call the `.Send()` method with the event we want to send.
+
+```go{30-34}
+package main
+
+import (
+    "fmt"
+
+    "github.com/Devessier/brainy"
+)
+
+func main() {
+    lightSwitchStateMachine := brainy.Machine{
+        Initial: "off",
+
+        StateNodes: brainy.StateNodes{
+            "on": brainy.StateNode{
+                On: brainy.Events{
+                    "toggle": "off",
+                },
+            },
+            "off": brainy.StateNode{
+                On: brainy.Events{
+                    "toggle": "on",
+                },
+            },
+        },
+    }
+    lightSwitchStateMachine.Init()
+
+    currentState := lightSwitchStateMachine.Current()
+    fmt.Printf("The current state of the state machine is: %s\n", currentState) // off
+
+    lightSwitchStateMachine.Send("toogle")
+
+    stateAfterFirstToggle := lightSwitchStateMachine.Current()
+    fmt.Printf("The state of the state machine after the first toogle is: %s\n", stateAfterFirstToggle) // on
+
+    lightSwitchStateMachine.Send("toogle")
+
+    stateAfterSecondToggle := lightSwitchStateMachine.Current()
+    fmt.Printf("The state of the state machine after the second toogle is: %s\n", stateAfterSecondToggle) // off
+}
+```
+#### Sending an unknown event
+
+The `.Send()` method returns two things: the state reached after the event has been received, and an error that could occur during the transition.
+
+In general we do not need to take care of these two returns, but the error can be used to know if the event we sent was handled by the state we were in. We can make use of [errors.Is](https://golang.org/pkg/errors/#Is) to determine if the returned error means the transition was impossible.
+
+```go
+import "errors"
+
+nextState, err := lightSwitchStateMachine.Send("toogle")
+if err != nil {
+    // An error occured during the transition
+    if errors.Is(err, brainy.ErrInvalidTransitionNotImplemented) {
+        // The event `toggle` is not handled by the state we are in.
+
+        return
+    }
+
+    // Another error occured.
+    //
+    // The only reason an error can be raised in a transition, except that the transition was not implemented,
+    // is that an error occured in an `action` of the state we reached.
+    // We will see `actions` in the following section.
+}
+
+```
+
+When an unknown event is received, the state of the state machine remains the same. The philosophy behind that is that with state machines, we need to explicitly write what can occur. We must write which states are possible, which events lead to which events. Anything that has not been explicitly described should never modify the state machine.
