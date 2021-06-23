@@ -28,7 +28,7 @@ func main() {
 
 We can now add the two states to the state machine:
 
-```go
+```go{7-10}
 package main
 
 import "github.com/Devessier/brainy"
@@ -51,7 +51,7 @@ We defined our switch light state machine to have two states, `on` and `off`. Bu
 
 With brainy, we need to define the initial state explicitly. It can be done by using the `Initial` field of `Machine` type. Let's say that by default, the light is off:
 
-```go
+```go{7-8}
 package main
 
 import "github.com/Devessier/brainy"
@@ -72,7 +72,7 @@ func main() {
 
 For brainy to go directly to the `Initial` state, we need to call the `.Init()` method on the state machine. This method will perform some internal work that is necessary for the state machine to work properly.
 
-```go
+```go{14}
 package main
 
 import "github.com/Devessier/brainy"
@@ -96,7 +96,7 @@ State machines allow to encapsulate logic in a single piece of code, and to desc
 
 With brainy, to know what is the current state of a state machine, we can use the method `.Current()`.
 
-```go
+```go{19-21}
 package main
 
 import (
