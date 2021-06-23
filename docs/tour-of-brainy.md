@@ -172,7 +172,7 @@ Now that we defined the transitions, we need to figure out how to send these eve
 
 To send an event to the state machine, we call the `.Send()` method with the event we want to send.
 
-```go{30-34}
+```go{30-39}
 package main
 
 import (
@@ -242,3 +242,76 @@ if err != nil {
 ```
 
 When an unknown event is received, the state of the state machine remains the same. The philosophy behind that is that with state machines, we need to explicitly write what can occur. We must write which states are possible, which events lead to which events. Anything that has not been explicitly described should never modify the state machine.
+
+## Actions
+
+Now we can go from one state to another one thanks to events sending. This is great! But in a real world state machine, we would like to perform some side effects when the state machine reaches a state.
+
+To do that, we can define `actions` on the states of our state machines, through `Actions` field, of type `brainy.Actions`:
+
+```go{15-22,28-35}
+package main
+
+import (
+    "fmt"
+
+    "github.com/Devessier/brainy"
+)
+
+func main() {
+    lightSwitchStateMachine := brainy.Machine{
+        Initial: "off",
+
+        StateNodes: brainy.StateNodes{
+            "on": brainy.StateNode{
+                Actions: brainy.Actions{
+					func(m *brainy.Machine, c brainy.Context) (brainy.EventType, error) {
+						fmt.Println("Reached on state")
+
+						return brainy.NoopEvent, nil
+					},
+				},
+
+                On: brainy.Events{
+                    "toggle": "off",
+                },
+            },
+            "off": brainy.StateNode{
+                Actions: brainy.Actions{
+					func(m *brainy.Machine, c brainy.Context) (brainy.EventType, error) {
+						fmt.Println("Reached off state")
+
+						return brainy.NoopEvent, nil
+					},
+				},
+
+                On: brainy.Events{
+                    "toggle": "on",
+                },
+            },
+        },
+    }
+    lightSwitchStateMachine.Init()
+
+    currentState := lightSwitchStateMachine.Current()
+    fmt.Printf("The current state of the state machine is: %s\n", currentState) // off
+
+    lightSwitchStateMachine.Send("toogle")
+
+    stateAfterFirstToggle := lightSwitchStateMachine.Current()
+    fmt.Printf("The state of the state machine after the first toogle is: %s\n", stateAfterFirstToggle) // on
+
+    lightSwitchStateMachine.Send("toogle")
+
+    stateAfterSecondToggle := lightSwitchStateMachine.Current()
+    fmt.Printf("The state of the state machine after the second toogle is: %s\n", stateAfterSecondToggle) // off
+}
+```
+
+Actions are functions that take a pointer to the state machine and the `context` of the state machine. The context of a state machine is any data structure you want, that contains things related to the state machine, that could not be expressed through finite states. For example, you could store in the context of power in Volt that goes through the light switch. This value can not be expressed with finite states, as by its nature it can take any value.
+
+An action needs to return two things: an inner event to send to the state machine after the action has ended, and an error. By returning an event from an action, you can simulate some XState features, such as [guarded transitions](https://xstate.js.org/docs/guides/guards.html).
+
+If you do not want to trigger a transition after an action has been executed, you can return the special event `brainy.NoopEvent`.
+
+If you return a non-nil error from an action, actions processing will be short-circuited and the error will be returned by call to `.Send()` that triggered the transition. Although the error is returned, the state of the state machine will remain the same.
