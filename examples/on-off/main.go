@@ -8,44 +8,52 @@ import (
 )
 
 func main() {
-	const (
-		OnState  brainy.StateType = "on"
-		OffState brainy.StateType = "off"
-
-		OnEvent  brainy.EventType = "on"
-		OffEvent brainy.EventType = "off"
-	)
-
-	onOffMachine := brainy.Machine{
-		Initial: OffState,
+	lightSwitchStateMachine := brainy.Machine{
+		Initial: "off",
 
 		StateNodes: brainy.StateNodes{
-			OnState: brainy.StateNode{
+			"on": brainy.StateNode{
+				Actions: brainy.Actions{
+					func(m *brainy.Machine, c brainy.Context) (brainy.EventType, error) {
+						fmt.Println("Reached on state")
+
+						return brainy.NoopEvent, nil
+					},
+				},
+
 				On: brainy.Events{
-					OffEvent: OffState,
+					"toggle": "off",
 				},
 			},
-			OffState: brainy.StateNode{
+			"off": brainy.StateNode{
+				Actions: brainy.Actions{
+					func(m *brainy.Machine, c brainy.Context) (brainy.EventType, error) {
+						fmt.Println("Reached off state")
+
+						return brainy.NoopEvent, nil
+					},
+				},
+
 				On: brainy.Events{
-					OnEvent: OnState,
+					"toggle": "on",
 				},
 			},
 		},
 	}
-	onOffMachine.Init()
+	lightSwitchStateMachine.Init()
 
-	initialState := onOffMachine.Current() // off
-	fmt.Printf("initial state of the state machine is: %s\n", initialState)
+	currentState := lightSwitchStateMachine.Current()
+	fmt.Printf("The current state of the state machine is: %s\n", currentState) // off
 
-	onOffMachine.Send(OnEvent)
+	lightSwitchStateMachine.Send("toogle")
 
-	stateAfterOnEvent := onOffMachine.Current() // on
-	fmt.Printf("state of the state machine after receiving an on event from off state is: %s\n", stateAfterOnEvent)
+	stateAfterFirstToggle := lightSwitchStateMachine.Current()
+	fmt.Printf("The state of the state machine after the first toogle is: %s\n", stateAfterFirstToggle) // on
 
-	onOffMachine.Send(OnEvent)
+	lightSwitchStateMachine.Send("toogle")
 
-	stateAfterASecondOnEvent := onOffMachine.Current() // on
-	fmt.Printf("state of the state machine after receiving an on event from on state is: %s\n", stateAfterASecondOnEvent)
+	stateAfterSecondToggle := lightSwitchStateMachine.Current()
+	fmt.Printf("The state of the state machine after the second toogle is: %s\n", stateAfterSecondToggle) // off
 }
 
 // @@@SNIPEND
