@@ -4,3 +4,6 @@ origins:
 
 targets:
   - docs
+
+features:
+  enable_source_link: false

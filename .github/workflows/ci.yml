@@ -3,18 +3,20 @@ name: Build and test
 on: [pull_request]
 
 jobs:
-  build:
-    name: Build
+  ci:
+    name: CI
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout
+        uses: actions/checkout@v2
 
-      - uses: actions/setup-go@v2
+      - name: Set up Go
+        uses: actions/setup-go@v2
         with:
           go-version: 1.16
 
-      - name: Build brainy
-        run: go build
+      - name: Format
+        run: if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then exit 1; fi
 
-      - name: Test brainy
-        run: go test -v
+      - name: Test
+        run: go test -race -v
