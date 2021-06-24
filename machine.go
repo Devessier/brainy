@@ -128,7 +128,7 @@ func (t Transitions) transitions() []Transition {
 type Cond func(Context, Event) bool
 
 type Transition struct {
-	Cond
+	Cond    Cond
 	Target  StateType
 	Actions Actions
 }
@@ -167,16 +167,54 @@ type Machine struct {
 
 	StateNodes StateNodes
 
-	lock sync.Mutex
+	validationErr error
+	lock          sync.Mutex
+}
+
+func (machine *Machine) validate() error {
+	for _, stateNode := range machine.StateNodes {
+		handlers := stateNode.On
+		if handlers == nil {
+			continue
+		}
+
+		for _, events := range handlers {
+			transitions := events.transitions()
+
+			for _, transition := range transitions {
+				target := transition.Target
+				if target == NoneState {
+					continue
+				}
+
+				if _, ok := machine.StateNodes[target]; !ok {
+					return ErrInvalidTransitionNotImplemented
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 // Init initializes the machine.
-func (machine *Machine) Init() {
+func (machine *Machine) Init() error {
+	if err := machine.validate(); err != nil {
+		machine.validationErr = err
+		return err
+	}
+
 	machine.current = machine.Initial
+
+	return nil
 }
 
 // Previous returns previous state.
 func (machine *Machine) Previous() StateType {
+	if err := machine.validationErr; err != nil {
+		return NoneState
+	}
+
 	machine.lock.Lock()
 	defer machine.lock.Unlock()
 
@@ -185,6 +223,10 @@ func (machine *Machine) Previous() StateType {
 
 // Current returns current state.
 func (machine *Machine) Current() StateType {
+	if err := machine.validationErr; err != nil {
+		return NoneState
+	}
+
 	machine.lock.Lock()
 	defer machine.lock.Unlock()
 
@@ -193,6 +235,10 @@ func (machine *Machine) Current() StateType {
 
 // UnsafeCurrent returns current state without taking care of active lock.
 func (machine *Machine) UnsafeCurrent() StateType {
+	if err := machine.validationErr; err != nil {
+		return NoneState
+	}
+
 	return machine.current
 }
 
@@ -223,6 +269,10 @@ func (machine *Machine) getTransitions(event EventType) ([]Transition, error) {
 // Send an event to the state machine.
 // Returns the new state and an error if one occured, or nil.
 func (machine *Machine) Send(event Event) (StateType, error) {
+	if err := machine.validationErr; err != nil {
+		return NoneState, err
+	}
+
 	machine.lock.Lock()
 	defer machine.lock.Unlock()
 

@@ -486,3 +486,42 @@ func TestFailingEntryActionAbortsTransition(t *testing.T) {
 	assert.Equal(OffState, onOffMachine.Current())
 	failingOnEntryTransition.AssertExpectations(t)
 }
+
+func TestPreemptivelyValidatesTransitions(t *testing.T) {
+	assert := assert.New(t)
+
+	invalidStateMachine := brainy.Machine{
+		Initial: OffState,
+
+		StateNodes: brainy.StateNodes{
+			OnState: brainy.StateNode{
+				On: brainy.Events{
+					OffEvent: IncrementState,
+				},
+			},
+
+			OffState: brainy.StateNode{
+				On: brainy.Events{
+					OnEvent: OnState,
+				},
+			},
+		},
+	}
+	err := invalidStateMachine.Init()
+	assert.Error(err)
+	assert.ErrorIs(err, brainy.ErrInvalidTransitionNotImplemented)
+
+	nextState, err := invalidStateMachine.Send(OnEvent)
+	assert.Equal(brainy.NoneState, nextState)
+	assert.Error(err)
+	assert.ErrorIs(err, brainy.ErrInvalidTransitionNotImplemented)
+
+	currentState := invalidStateMachine.Current()
+	assert.Equal(brainy.NoneState, currentState)
+
+	currentState = invalidStateMachine.UnsafeCurrent()
+	assert.Equal(brainy.NoneState, currentState)
+
+	previousState := invalidStateMachine.Current()
+	assert.Equal(brainy.NoneState, previousState)
+}
