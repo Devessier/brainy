@@ -14,6 +14,7 @@ The objective of this library is to have a minimal port of [XState](https://gith
 go get -u github.com/Devessier/brainy
 ```
 
+<!--SNIPSTART on-off-example-->
 ```go
 package main
 
@@ -23,44 +24,80 @@ import (
 	"github.com/Devessier/brainy"
 )
 
+const (
+	OnState  brainy.StateType = "on"
+	OffState brainy.StateType = "off"
+
+	ToggleEvent brainy.EventType = "TOGGLE"
+)
+
 func main() {
-	const (
-		OnState  brainy.StateType = "on"
-		OffState brainy.StateType = "off"
-
-		OnEvent  brainy.EventType = "on"
-		OffEvent brainy.EventType = "off"
-	)
-
-	onOffMachine := brainy.Machine{
+	lightSwitchStateMachine := brainy.Machine{
 		Initial: OffState,
 
 		StateNodes: brainy.StateNodes{
 			OnState: brainy.StateNode{
+				OnEntry: brainy.Actions{
+					func(c brainy.Context, e brainy.Event) error {
+						fmt.Println("Reached `on` state")
+
+						return nil
+					},
+				},
+
 				On: brainy.Events{
-					OffEvent: OffState,
+					ToggleEvent: brainy.Transition{
+						Target: OffState,
+						Actions: brainy.Actions{
+							func(c brainy.Context, e brainy.Event) error {
+								fmt.Println("Go to `off` state")
+
+								return nil
+							},
+						},
+					},
 				},
 			},
+
 			OffState: brainy.StateNode{
+				OnEntry: brainy.Actions{
+					func(c brainy.Context, e brainy.Event) error {
+						fmt.Println("Reached `off` state")
+
+						return nil
+					},
+				},
+
 				On: brainy.Events{
-					OnEvent: OnState,
+					ToggleEvent: brainy.Transition{
+						Target: OnState,
+						Actions: brainy.Actions{
+							func(c brainy.Context, e brainy.Event) error {
+								fmt.Println("Go to `on` state")
+
+								return nil
+							},
+						},
+					},
 				},
 			},
 		},
 	}
-	onOffMachine.Init()
+	lightSwitchStateMachine.Init()
 
-	initialState := onOffMachine.Current() // off
-	fmt.Printf("initial state of the state machine is: %s\n", initialState)
+	currentState := lightSwitchStateMachine.Current()
+	fmt.Printf("The current state of the state machine is: %s\n", currentState) // off
 
-	onOffMachine.Send(OnEvent)
+	lightSwitchStateMachine.Send(ToggleEvent)
 
-	stateAfterOnEvent := onOffMachine.Current() // on
-	fmt.Printf("state of the state machine after receiving an on event from off state is: %s\n", stateAfterOnEvent)
+	stateAfterFirstToggle := lightSwitchStateMachine.Current()
+	fmt.Printf("The state of the state machine after the first toogle is: %s\n", stateAfterFirstToggle) // on
 
-	onOffMachine.Send(OnEvent)
+	lightSwitchStateMachine.Send(ToggleEvent)
 
-	stateAfterASecondOnEvent := onOffMachine.Current() // on
-	fmt.Printf("state of the state machine after receiving an on event from on state is: %s\n", stateAfterASecondOnEvent)
+	stateAfterSecondToggle := lightSwitchStateMachine.Current()
+	fmt.Printf("The state of the state machine after the second toogle is: %s\n", stateAfterSecondToggle) // off
 }
+
 ```
+<!--SNIPEND-->
