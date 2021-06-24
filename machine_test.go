@@ -325,3 +325,54 @@ func TestStateMachineWithTransitionsWithoutTargets(t *testing.T) {
 	assert.ErrorIs(err, brainy.ErrInvalidTransitionNotImplemented)
 	assert.Equal(3, stateMachineContext.ToIncrement)
 }
+
+func TestOnlyOneTransitionCanBeTaken(t *testing.T) {
+	assert := assert.New(t)
+
+	onOffMachineContext := &struct{}{}
+
+	firstGuardCondition := new(mocks.Cond)
+	firstGuardCondition.On("Execute", onOffMachineContext, OnEvent).Return(true)
+	secondGuardCondition := new(mocks.Cond)
+	thirdGuardCondition := new(mocks.Cond)
+
+	onOffMachine := brainy.Machine{
+		Initial: OffState,
+
+		Context: onOffMachineContext,
+
+		StateNodes: brainy.StateNodes{
+			OnState: brainy.StateNode{},
+
+			OffState: brainy.StateNode{
+				On: brainy.Events{
+					OnEvent: brainy.Transitions{
+						{
+							Cond:   firstGuardCondition.Execute,
+							Target: OnState,
+						},
+						{
+							Cond:   secondGuardCondition.Execute,
+							Target: OnState,
+						},
+						{
+							Cond:   thirdGuardCondition.Execute,
+							Target: OnState,
+						},
+					},
+				},
+			},
+		},
+	}
+	onOffMachine.Init()
+
+	assert.Equal(OffState, onOffMachine.Current())
+
+	_, err := onOffMachine.Send(OnEvent)
+	assert.NoError(err)
+
+	assert.Equal(OnState, onOffMachine.Current())
+	firstGuardCondition.AssertExpectations(t)
+	secondGuardCondition.AssertNumberOfCalls(t, "Execute", 0)
+	thirdGuardCondition.AssertNumberOfCalls(t, "Execute", 0)
+}

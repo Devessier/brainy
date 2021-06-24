@@ -254,6 +254,8 @@ func (machine *Machine) Send(event Event) (StateType, error) {
 			machine.previous = machine.current
 			machine.current = target
 		}
+
+		break
 	}
 
 	return machine.current, nil
