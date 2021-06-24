@@ -376,3 +376,113 @@ func TestOnlyOneTransitionCanBeTaken(t *testing.T) {
 	secondGuardCondition.AssertNumberOfCalls(t, "Execute", 0)
 	thirdGuardCondition.AssertNumberOfCalls(t, "Execute", 0)
 }
+
+func TestOnEntryThenActionsThenOnExitAreCalled(t *testing.T) {
+	assert := assert.New(t)
+
+	onOffMachineContext := &struct{}{}
+
+	actionsCallsOrder := []string{}
+
+	onExitOffStateAction := new(mocks.Action)
+	onExitOffStateAction.On("Execute", onOffMachineContext, OnEvent).Return(nil).Run(func(args mock.Arguments) {
+		actionsCallsOrder = append(actionsCallsOrder, "onExit")
+	})
+
+	transitionAction := new(mocks.Action)
+	transitionAction.On("Execute", onOffMachineContext, OnEvent).Return(nil).Run(func(args mock.Arguments) {
+		actionsCallsOrder = append(actionsCallsOrder, "action")
+	})
+
+	onEnterOnStateAction := new(mocks.Action)
+	onEnterOnStateAction.On("Execute", onOffMachineContext, OnEvent).Return(nil).Run(func(args mock.Arguments) {
+		actionsCallsOrder = append(actionsCallsOrder, "onEnter")
+	})
+
+	onOffMachine := brainy.Machine{
+		Initial: OffState,
+
+		Context: onOffMachineContext,
+
+		StateNodes: brainy.StateNodes{
+			OnState: brainy.StateNode{
+				OnEntry: brainy.Actions{
+					onEnterOnStateAction.Execute,
+				},
+			},
+
+			OffState: brainy.StateNode{
+				OnExit: brainy.Actions{
+					onExitOffStateAction.Execute,
+				},
+
+				On: brainy.Events{
+					OnEvent: brainy.Transition{
+						Target: OnState,
+						Actions: brainy.Actions{
+							transitionAction.Execute,
+						},
+					},
+				},
+			},
+		},
+	}
+	onOffMachine.Init()
+
+	assert.Equal(OffState, onOffMachine.Current())
+
+	_, err := onOffMachine.Send(OnEvent)
+	assert.NoError(err)
+
+	assert.Equal(OnState, onOffMachine.Current())
+	onExitOffStateAction.AssertExpectations(t)
+	transitionAction.AssertExpectations(t)
+	onEnterOnStateAction.AssertExpectations(t)
+	assert.Equal([]string{
+		"onExit",
+		"action",
+		"onEnter",
+	}, actionsCallsOrder)
+}
+
+func TestFailingEntryActionAbortsTransition(t *testing.T) {
+	assert := assert.New(t)
+
+	onOffMachineContext := &struct{}{}
+	failingOnExitTransitionError := errors.New("this action must fail")
+
+	failingOnEntryTransition := new(mocks.Action)
+	failingOnEntryTransition.On("Execute", onOffMachineContext, OnEvent).Return(failingOnExitTransitionError)
+
+	onOffMachine := brainy.Machine{
+		Initial: OffState,
+
+		Context: onOffMachineContext,
+
+		StateNodes: brainy.StateNodes{
+			OnState: brainy.StateNode{
+				OnEntry: brainy.Actions{
+					failingOnEntryTransition.Execute,
+				},
+			},
+
+			OffState: brainy.StateNode{
+
+				On: brainy.Events{
+					OnEvent: OnState,
+				},
+			},
+		},
+	}
+	onOffMachine.Init()
+
+	assert.Equal(OffState, onOffMachine.Current())
+
+	nextState, err := onOffMachine.Send(OnEvent)
+	assert.Equal(OffState, nextState)
+	assert.Error(err)
+	assert.ErrorIs(err, failingOnExitTransitionError)
+
+	assert.Equal(OffState, onOffMachine.Current())
+	failingOnEntryTransition.AssertExpectations(t)
+}

@@ -125,8 +125,10 @@ func (t Transitions) transitions() []Transition {
 	return t
 }
 
+type Cond func(Context, Event) bool
+
 type Transition struct {
-	Cond    func(Context, Event) bool
+	Cond
 	Target  StateType
 	Actions Actions
 }
@@ -145,8 +147,10 @@ type Events map[EventType]Transitioner
 // When no events are specified, the state node is of *final* type, which means once reached, the state
 // machine can not be transitioned anymore.
 type StateNode struct {
-	Actions Actions
-	On      Events
+	OnEntry Actions
+	OnExit  Actions
+
+	On Events
 }
 
 // A StateNodes holds all state nodes of a machine.
@@ -242,6 +246,15 @@ func (machine *Machine) Send(event Event) (StateType, error) {
 			continue
 		}
 
+		currentStateNode := machine.StateNodes[machine.current]
+		if onExitActions := currentStateNode.OnExit; onExitActions != nil {
+			for _, action := range onExitActions {
+				if err := action(machine.Context, event); err != nil {
+					return machine.current, err
+				}
+			}
+		}
+
 		if actions := transition.Actions; actions != nil {
 			for _, action := range actions {
 				if err := action(machine.Context, event); err != nil {
@@ -251,6 +264,15 @@ func (machine *Machine) Send(event Event) (StateType, error) {
 		}
 
 		if target := transition.Target; target != NoneState {
+			nextStateNode := machine.StateNodes[target]
+			if onEntryActions := nextStateNode.OnEntry; onEntryActions != nil {
+				for _, action := range onEntryActions {
+					if err := action(machine.Context, event); err != nil {
+						return machine.current, err
+					}
+				}
+			}
+
 			machine.previous = machine.current
 			machine.current = target
 		}
