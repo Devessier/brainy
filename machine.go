@@ -2,7 +2,6 @@ package brainy
 
 import (
 	"errors"
-	"log"
 	"strconv"
 	"sync"
 )
@@ -68,14 +67,25 @@ func (err *ErrAction) Error() string {
 // StateType represents a state described in the state machine.
 type StateType string
 
+func (s StateType) transitions() []Transition {
+	return []Transition{
+		{
+			Target: s,
+		},
+	}
+}
+
 // Basic states.
 const (
-	IdleState StateType = ""
-	NoopState StateType = "noop"
+	NoneState StateType = ""
 )
 
 // EventType represents an event transitioning from one state to another one.
 type EventType string
+
+func (e EventType) eventType() EventType {
+	return e
+}
 
 // Basic events.
 const (
@@ -88,13 +98,45 @@ type Context interface{}
 
 // An Action is performed when the machine is transitioning to the node where it's defined.
 // It takes machine context and returns an event to send to the machine itself, or NoopEvent.
-type Action func(*Machine, Context) (EventType, error)
+type Action func(Context, Event) error
 
 // Actions is a slice of Action.
 type Actions []Action
 
+type EventWithType struct {
+	Event EventType
+}
+
+func (e EventWithType) eventType() EventType {
+	return e.Event
+}
+
+type Event interface {
+	eventType() EventType
+}
+
+type Transitioner interface {
+	transitions() []Transition
+}
+
+type Transitions []Transition
+
+func (t Transitions) transitions() []Transition {
+	return t
+}
+
+type Transition struct {
+	Cond    func(Context, Event) bool
+	Target  StateType
+	Actions Actions
+}
+
+func (t Transition) transitions() []Transition {
+	return []Transition{t}
+}
+
 // Events map holds events to listen with the state to transition to when triggered.
-type Events map[EventType]StateType
+type Events map[EventType]Transitioner
 
 // A StateNode is a node of the state machine.
 // It has actions and events to listen to.
@@ -121,8 +163,6 @@ type Machine struct {
 
 	StateNodes StateNodes
 
-	Debug bool
-
 	lock sync.Mutex
 }
 
@@ -143,6 +183,7 @@ func (machine *Machine) Previous() StateType {
 func (machine *Machine) Current() StateType {
 	machine.lock.Lock()
 	defer machine.lock.Unlock()
+
 	return machine.current
 }
 
@@ -151,100 +192,69 @@ func (machine *Machine) UnsafeCurrent() StateType {
 	return machine.current
 }
 
-func (machine *Machine) getNextState(event EventType) (StateType, error) {
+func (machine *Machine) getTransitions(event EventType) ([]Transition, error) {
 	currentState, ok := machine.StateNodes[machine.current]
 	if !ok {
-		return NoopState, &ErrInvalidTransition{
+		return nil, &ErrInvalidTransition{
 			Err: ErrInvalidTransitionInvalidCurrentState,
 		}
 	}
-	if machine.Debug {
-		log.Println("state machine: current state:", machine.current)
-	}
 
 	if currentState.On == nil {
-		return NoopState, &ErrInvalidTransition{
+		return nil, &ErrInvalidTransition{
 			Err: ErrInvalidTransitionFinalState,
 		}
 	}
 
-	nextState, ok := currentState.On[event]
+	transitions, ok := currentState.On[event]
 	if !ok {
-		return NoopState, &ErrInvalidTransition{
+		return nil, &ErrInvalidTransition{
 			Err: ErrInvalidTransitionNotImplemented,
 		}
 	}
-	if machine.Debug {
-		log.Println("state machine: next state:", nextState)
-	}
 
-	return nextState, nil
-}
-
-func (machine *Machine) executeActions(stateNode StateNode) (EventType, error) {
-	for index, actionToRun := range stateNode.Actions {
-		stateToReach, err := actionToRun(machine, machine.Context)
-		if err != nil {
-			return NoopEvent, &ErrAction{
-				ID:  index,
-				Err: err,
-			}
-		}
-		if stateToReach == NoopEvent {
-			continue
-		}
-
-		return stateToReach, nil
-	}
-
-	return NoopEvent, nil
+	return transitions.transitions(), nil
 }
 
 // Send an event to the state machine.
 // Returns the new state and an error if one occured, or nil.
-func (machine *Machine) Send(event EventType) (StateType, error) {
+func (machine *Machine) Send(event Event) (StateType, error) {
 	machine.lock.Lock()
 	defer machine.lock.Unlock()
 
-	for {
-		nextState, err := machine.getNextState(event)
-		if err != nil {
-			return NoopState, &ErrTransition{
-				Event: event,
-				Err:   err,
-			}
-		}
+	eventType := event.eventType()
 
-		nextStateNode, ok := machine.StateNodes[nextState]
-		if !ok {
-			return NoopState, &ErrTransition{
-				Event: event,
-				Err: &ErrInvalidTransition{
-					Err: &ErrInvalidTransitionNextStateNotImplemented{
-						NextState: nextState,
-					},
-				},
-			}
+	transitions, err := machine.getTransitions(eventType)
+	if err != nil {
+		return machine.current, &ErrTransition{
+			Event: eventType,
+			Err:   err,
 		}
-
-		machine.previous = machine.current
-		machine.current = nextState
-
-		if len(nextStateNode.Actions) == 0 {
-			return nextState, nil
-		}
-
-		eventToSend, err := machine.executeActions(nextStateNode)
-		if err != nil {
-			return NoopState, &ErrTransition{
-				Event: event,
-				Err:   err,
-			}
-		}
-		if eventToSend == NoopEvent {
-			return nextState, nil
-		}
-
-		event = eventToSend
 	}
+
+	for _, transition := range transitions {
+		shouldCommitTransition := true
+		if cond := transition.Cond; cond != nil {
+			shouldCommitTransition = cond(machine.Context, event)
+		}
+
+		if !shouldCommitTransition {
+			continue
+		}
+
+		if actions := transition.Actions; actions != nil {
+			for _, action := range actions {
+				if err := action(machine.Context, event); err != nil {
+					return machine.current, err
+				}
+			}
+		}
+
+		if target := transition.Target; target != NoneState {
+			machine.previous = machine.current
+			machine.current = target
+		}
+	}
+
+	return machine.current, nil
 }
