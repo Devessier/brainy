@@ -1,13 +1,16 @@
 package brainy_test
 
 import (
-	"errors"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 
 	"github.com/Devessier/brainy"
 )
 
 func TestOnOffMachine(t *testing.T) {
+	assert := assert.New(t)
+
 	const (
 		OnState  brainy.StateType = "on"
 		OffState brainy.StateType = "off"
@@ -34,67 +37,19 @@ func TestOnOffMachine(t *testing.T) {
 	}
 	onOffMachine.Init()
 
-	if currentState := onOffMachine.Current(); currentState != OffState {
-		t.Fatalf(
-			"machine is in incorrect state %v; expected %v",
-			currentState,
-			OffState,
-		)
-	}
+	assert.Equal(OffState, onOffMachine.Current())
 
 	nextState, err := onOffMachine.Send(OnEvent)
-	if err != nil {
-		t.Fatalf(
-			"transition returned an unexpected error %v",
-			err,
-		)
-	}
-	if nextState != OnState {
-		t.Fatalf(
-			"machine is in incorrect state %v; expected %v",
-			nextState,
-			OnState,
-		)
-	}
-	if currentState := onOffMachine.Current(); currentState != OnState {
-		t.Fatalf(
-			"machine is in incorrect state %v; expected %v",
-			currentState,
-			OnState,
-		)
-	}
+	assert.NoError(err)
+	assert.Equal(OnState, nextState)
+	assert.Equal(OnState, onOffMachine.Current())
 
 	nextState, err = onOffMachine.Send(OnEvent)
-	if err == nil {
-		t.Error("returned no error when we expected one")
-	}
-	if !errors.Is(err, brainy.ErrInvalidTransitionNotImplemented) {
-		t.Fatalf(
-			"returned error is not caused by what we expected %v; expected %v",
-			err,
-			brainy.ErrInvalidTransitionNotImplemented,
-		)
-	}
+	assert.Error(err)
+	assert.ErrorIs(err, brainy.ErrInvalidTransitionNotImplemented)
 
 	nextState, err = onOffMachine.Send(OffEvent)
-	if err != nil {
-		t.Fatalf(
-			"transition returned an unexpected error %v",
-			err,
-		)
-	}
-	if nextState != OffState {
-		t.Fatalf(
-			"machine is in incorrect state %v; expected %v",
-			nextState,
-			OffState,
-		)
-	}
-	if currentState := onOffMachine.Current(); currentState != OffState {
-		t.Fatalf(
-			"machine is in incorrect state %v; expected %v",
-			currentState,
-			OffState,
-		)
-	}
+	assert.NoError(err)
+	assert.Equal(OffState, nextState)
+	assert.Equal(OffState, onOffMachine.Current())
 }
