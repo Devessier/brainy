@@ -6,7 +6,7 @@
   "license": "GPL-3.0",
   "private": false,
   "scripts": {
-    "docs:copy:readme": "cp README.md docs/index.md",
+    "docs:copy:readme": "cp docs/index.md README.md",
     "docs:dev": "vitepress dev docs",
     "docs:build": "yarn generate:code-snippets && yarn docs:copy:readme && vitepress build docs",
     "docs:serve": "vitepress serve docs",
