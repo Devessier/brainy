@@ -218,6 +218,12 @@ type Events map[EventType]Transitioner
 // When no events are specified, the state node is of *final* type, which means once reached, the state
 // machine can not be transitioned anymore.
 type StateNode struct {
+	Context Context
+
+	Initial StateType
+
+	States StateNodes
+
 	OnEntry Actions
 	OnExit  Actions
 
@@ -227,26 +233,36 @@ type StateNode struct {
 // A StateNodes holds all state nodes of a machine.
 type StateNodes map[StateType]StateNode
 
+// NewMachine takes a StateNode configuration and returns a Machine if one could be created from the given configuration.
+// The configuration is validated so that impossible transitions are not possible at runtime.
+// If the state machine could not be created, the validation error is returned.
+func NewMachine(config StateNode) (*Machine, error) {
+	machine := &Machine{
+		StateNode: config,
+	}
+	if err := machine.init(); err != nil {
+		return nil, err
+	}
+
+	return machine, nil
+}
+
 // A Machine is a simple finite state machine.
+// State machines should be instanciated through NewMachine function, that will validate state nodes configuration.
 //
 // The long-term objective of this library is to have a Golang implementation of state charts as defined by the SCXML specification.
 type Machine struct {
-	Context Context
-
-	Initial StateType
+	StateNode
 
 	previous StateType
 	current  StateType
 
-	StateNodes StateNodes
-
-	validationErr error
-	lock          sync.Mutex
+	lock sync.Mutex
 }
 
 // Validate ensures all transitions targets are valid states.
 func (machine *Machine) validate() error {
-	for _, stateNode := range machine.StateNodes {
+	for _, stateNode := range machine.States {
 		handlers := stateNode.On
 		if handlers == nil {
 			continue
@@ -261,7 +277,7 @@ func (machine *Machine) validate() error {
 					continue
 				}
 
-				if _, ok := machine.StateNodes[target]; !ok {
+				if _, ok := machine.States[target]; !ok {
 					return ErrInvalidTransitionNotImplemented
 				}
 			}
@@ -272,9 +288,8 @@ func (machine *Machine) validate() error {
 }
 
 // Init initializes the machine and validates transitions target state.
-func (machine *Machine) Init() error {
+func (machine *Machine) init() error {
 	if err := machine.validate(); err != nil {
-		machine.validationErr = err
 		return err
 	}
 
@@ -285,10 +300,6 @@ func (machine *Machine) Init() error {
 
 // Previous returns previous state.
 func (machine *Machine) Previous() StateType {
-	if err := machine.validationErr; err != nil {
-		return NoneState
-	}
-
 	machine.lock.Lock()
 	defer machine.lock.Unlock()
 
@@ -297,10 +308,6 @@ func (machine *Machine) Previous() StateType {
 
 // Current returns current state.
 func (machine *Machine) Current() StateType {
-	if err := machine.validationErr; err != nil {
-		return NoneState
-	}
-
 	machine.lock.Lock()
 	defer machine.lock.Unlock()
 
@@ -309,15 +316,11 @@ func (machine *Machine) Current() StateType {
 
 // UnsafeCurrent returns current state without taking care of active lock.
 func (machine *Machine) UnsafeCurrent() StateType {
-	if err := machine.validationErr; err != nil {
-		return NoneState
-	}
-
 	return machine.current
 }
 
 func (machine *Machine) getTransitions(event EventType) ([]Transition, error) {
-	currentState, ok := machine.StateNodes[machine.current]
+	currentState, ok := machine.States[machine.current]
 	if !ok {
 		return nil, &ErrInvalidTransition{
 			Err: ErrInvalidTransitionInvalidCurrentState,
@@ -343,10 +346,6 @@ func (machine *Machine) getTransitions(event EventType) ([]Transition, error) {
 // Send an event to the state machine.
 // Returns the new state and an error if one occured, or nil.
 func (machine *Machine) Send(event Event) (StateType, error) {
-	if err := machine.validationErr; err != nil {
-		return NoneState, err
-	}
-
 	machine.lock.Lock()
 	defer machine.lock.Unlock()
 
@@ -370,7 +369,7 @@ func (machine *Machine) Send(event Event) (StateType, error) {
 			continue
 		}
 
-		currentStateNode := machine.StateNodes[machine.current]
+		currentStateNode := machine.States[machine.current]
 		if onExitActions := currentStateNode.OnExit; onExitActions != nil {
 			for index, action := range onExitActions {
 				if err := action(machine.Context, event); err != nil {
@@ -396,7 +395,7 @@ func (machine *Machine) Send(event Event) (StateType, error) {
 		}
 
 		if target := transition.Target; target != NoneState {
-			nextStateNode := machine.StateNodes[target]
+			nextStateNode := machine.States[target]
 			if onEntryActions := nextStateNode.OnEntry; onEntryActions != nil {
 				for index, action := range onEntryActions {
 					if err := action(machine.Context, event); err != nil {

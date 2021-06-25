@@ -22,10 +22,10 @@ const (
 func TestOnOffMachine(t *testing.T) {
 	assert := assert.New(t)
 
-	onOffMachine := brainy.Machine{
+	onOffMachine, err := brainy.NewMachine(brainy.StateNode{
 		Initial: OffState,
 
-		StateNodes: brainy.StateNodes{
+		States: brainy.StateNodes{
 			OnState: brainy.StateNode{
 				On: brainy.Events{
 					OffEvent: OffState,
@@ -38,8 +38,8 @@ func TestOnOffMachine(t *testing.T) {
 				},
 			},
 		},
-	}
-	onOffMachine.Init()
+	})
+	assert.NoError(err)
 
 	assert.Equal(OffState, onOffMachine.Current())
 
@@ -86,10 +86,10 @@ type IncrementStateMachineContext struct {
 func TestCondIsTrueByDefault(t *testing.T) {
 	assert := assert.New(t)
 
-	onOffMachine := brainy.Machine{
+	onOffMachine, err := brainy.NewMachine(brainy.StateNode{
 		Initial: OffState,
 
-		StateNodes: brainy.StateNodes{
+		States: brainy.StateNodes{
 			OnState: brainy.StateNode{
 				On: brainy.Events{
 					OffEvent: OffState,
@@ -102,8 +102,8 @@ func TestCondIsTrueByDefault(t *testing.T) {
 				},
 			},
 		},
-	}
-	onOffMachine.Init()
+	})
+	assert.NoError(err)
 
 	assert.Equal(OffState, onOffMachine.Current())
 
@@ -115,10 +115,10 @@ func TestCondIsTrueByDefault(t *testing.T) {
 func TestCondTakesAGuardFunction(t *testing.T) {
 	assert := assert.New(t)
 
-	onOffMachine := brainy.Machine{
+	onOffMachine, err := brainy.NewMachine(brainy.StateNode{
 		Initial: OnState,
 
-		StateNodes: brainy.StateNodes{
+		States: brainy.StateNodes{
 			OnState: brainy.StateNode{
 				On: brainy.Events{
 					OffEvent: brainy.Transition{
@@ -141,12 +141,12 @@ func TestCondTakesAGuardFunction(t *testing.T) {
 				},
 			},
 		},
-	}
-	onOffMachine.Init()
+	})
+	assert.NoError(err)
 
 	assert.Equal(OnState, onOffMachine.Current())
 
-	_, err := onOffMachine.Send(OffEvent)
+	_, err = onOffMachine.Send(OffEvent)
 	assert.NoError(err)
 
 	assert.Equal(OffState, onOffMachine.Current())
@@ -169,12 +169,12 @@ func TestAllActionsOfATransitionAreCalled(t *testing.T) {
 	thirdTransitionAction := new(mocks.Action)
 	thirdTransitionAction.On("Execute", onOffMachineContext, OffEvent).Return(nil)
 
-	onOffMachine := brainy.Machine{
+	onOffMachine, err := brainy.NewMachine(brainy.StateNode{
 		Initial: OnState,
 
 		Context: onOffMachineContext,
 
-		StateNodes: brainy.StateNodes{
+		States: brainy.StateNodes{
 			OnState: brainy.StateNode{
 				On: brainy.Events{
 					OffEvent: brainy.Transition{
@@ -196,12 +196,12 @@ func TestAllActionsOfATransitionAreCalled(t *testing.T) {
 				},
 			},
 		},
-	}
-	onOffMachine.Init()
+	})
+	assert.NoError(err)
 
 	assert.Equal(OnState, onOffMachine.Current())
 
-	_, err := onOffMachine.Send(OffEvent)
+	_, err = onOffMachine.Send(OffEvent)
 	assert.NoError(err)
 
 	assert.Equal(OffState, onOffMachine.Current())
@@ -221,12 +221,12 @@ func TestAFailingActionShortCircuitsTransition(t *testing.T) {
 	secondTransitionAction.On("Execute", onOffMachineContext, OffEvent).Return(unexpectedError)
 	thirdTransitionAction := new(mocks.Action)
 
-	onOffMachine := brainy.Machine{
+	onOffMachine, err := brainy.NewMachine(brainy.StateNode{
 		Initial: OnState,
 
 		Context: onOffMachineContext,
 
-		StateNodes: brainy.StateNodes{
+		States: brainy.StateNodes{
 			OnState: brainy.StateNode{
 				On: brainy.Events{
 					OffEvent: brainy.Transition{
@@ -248,8 +248,8 @@ func TestAFailingActionShortCircuitsTransition(t *testing.T) {
 				},
 			},
 		},
-	}
-	onOffMachine.Init()
+	})
+	assert.NoError(err)
 
 	assert.Equal(OnState, onOffMachine.Current())
 
@@ -271,12 +271,12 @@ func TestStateMachineWithTransitionsWithoutTargets(t *testing.T) {
 		ToIncrement: 0,
 	}
 
-	incrementVariableInContextMachine := brainy.Machine{
+	incrementVariableInContextMachine, err := brainy.NewMachine(brainy.StateNode{
 		Initial: IncrementState,
 
 		Context: &stateMachineContext,
 
-		StateNodes: brainy.StateNodes{
+		States: brainy.StateNodes{
 			IncrementState: brainy.StateNode{
 				On: brainy.Events{
 					IncrementEventType: brainy.Transitions{
@@ -304,8 +304,8 @@ func TestStateMachineWithTransitionsWithoutTargets(t *testing.T) {
 				},
 			},
 		},
-	}
-	incrementVariableInContextMachine.Init()
+	})
+	assert.NoError(err)
 
 	assert.Equal(0, stateMachineContext.ToIncrement)
 
@@ -336,12 +336,12 @@ func TestOnlyOneTransitionCanBeTaken(t *testing.T) {
 	secondGuardCondition := new(mocks.Cond)
 	thirdGuardCondition := new(mocks.Cond)
 
-	onOffMachine := brainy.Machine{
+	onOffMachine, err := brainy.NewMachine(brainy.StateNode{
 		Initial: OffState,
 
 		Context: onOffMachineContext,
 
-		StateNodes: brainy.StateNodes{
+		States: brainy.StateNodes{
 			OnState: brainy.StateNode{},
 
 			OffState: brainy.StateNode{
@@ -363,12 +363,12 @@ func TestOnlyOneTransitionCanBeTaken(t *testing.T) {
 				},
 			},
 		},
-	}
-	onOffMachine.Init()
+	})
+	assert.NoError(err)
 
 	assert.Equal(OffState, onOffMachine.Current())
 
-	_, err := onOffMachine.Send(OnEvent)
+	_, err = onOffMachine.Send(OnEvent)
 	assert.NoError(err)
 
 	assert.Equal(OnState, onOffMachine.Current())
@@ -399,12 +399,12 @@ func TestOnEntryThenActionsThenOnExitAreCalled(t *testing.T) {
 		actionsCallsOrder = append(actionsCallsOrder, "onEnter")
 	})
 
-	onOffMachine := brainy.Machine{
+	onOffMachine, err := brainy.NewMachine(brainy.StateNode{
 		Initial: OffState,
 
 		Context: onOffMachineContext,
 
-		StateNodes: brainy.StateNodes{
+		States: brainy.StateNodes{
 			OnState: brainy.StateNode{
 				OnEntry: brainy.Actions{
 					onEnterOnStateAction.Execute,
@@ -426,12 +426,12 @@ func TestOnEntryThenActionsThenOnExitAreCalled(t *testing.T) {
 				},
 			},
 		},
-	}
-	onOffMachine.Init()
+	})
+	assert.NoError(err)
 
 	assert.Equal(OffState, onOffMachine.Current())
 
-	_, err := onOffMachine.Send(OnEvent)
+	_, err = onOffMachine.Send(OnEvent)
 	assert.NoError(err)
 
 	assert.Equal(OnState, onOffMachine.Current())
@@ -454,12 +454,12 @@ func TestFailingEntryActionAbortsTransition(t *testing.T) {
 	failingOnEntryTransition := new(mocks.Action)
 	failingOnEntryTransition.On("Execute", onOffMachineContext, OnEvent).Return(failingOnExitTransitionError)
 
-	onOffMachine := brainy.Machine{
+	onOffMachine, err := brainy.NewMachine(brainy.StateNode{
 		Initial: OffState,
 
 		Context: onOffMachineContext,
 
-		StateNodes: brainy.StateNodes{
+		States: brainy.StateNodes{
 			OnState: brainy.StateNode{
 				OnEntry: brainy.Actions{
 					failingOnEntryTransition.Execute,
@@ -473,8 +473,8 @@ func TestFailingEntryActionAbortsTransition(t *testing.T) {
 				},
 			},
 		},
-	}
-	onOffMachine.Init()
+	})
+	assert.NoError(err)
 
 	assert.Equal(OffState, onOffMachine.Current())
 
@@ -490,10 +490,10 @@ func TestFailingEntryActionAbortsTransition(t *testing.T) {
 func TestPreemptivelyValidatesTransitions(t *testing.T) {
 	assert := assert.New(t)
 
-	invalidStateMachine := brainy.Machine{
+	invalidStateMachine, err := brainy.NewMachine(brainy.StateNode{
 		Initial: OffState,
 
-		StateNodes: brainy.StateNodes{
+		States: brainy.StateNodes{
 			OnState: brainy.StateNode{
 				On: brainy.Events{
 					OffEvent: IncrementState,
@@ -506,18 +506,11 @@ func TestPreemptivelyValidatesTransitions(t *testing.T) {
 				},
 			},
 		},
-	}
-	err := invalidStateMachine.Init()
+	})
+	assert.Nil(invalidStateMachine)
 	assert.Error(err)
 	assert.ErrorIs(err, brainy.ErrInvalidTransitionNotImplemented)
-
-	nextState, err := invalidStateMachine.Send(OnEvent)
-	assert.Equal(brainy.NoneState, nextState)
-	assert.Error(err)
-	assert.ErrorIs(err, brainy.ErrInvalidTransitionNotImplemented)
-
-	currentState := invalidStateMachine.Current()
-	assert.Equal(brainy.NoneState, currentState)
+}
 
 	currentState = invalidStateMachine.UnsafeCurrent()
 	assert.Equal(brainy.NoneState, currentState)
