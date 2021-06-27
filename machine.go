@@ -373,8 +373,6 @@ func (s *StateNode) executeOnEntryActions(c Context, e Event) error {
 			actionsToCall = append(actionsToCall, onEntryActions...)
 		}
 
-		// Be sure to execute the OnEntry actions of the root state node, which has a parentStateNode of nil.
-
 		stateNodeToEntry = stateNodeToEntry.parentStateNode
 	}
 
@@ -401,8 +399,8 @@ func (s *StateNode) executeOnEntryActions(c Context, e Event) error {
 func (s *StateNode) executeOnExitActions(c Context, e Event) error {
 	stateNodeToExit := s
 
-	for {
-		if onExitActions := s.OnExit; onExitActions != nil {
+	for stateNodeToExit != nil {
+		if onExitActions := stateNodeToExit.OnExit; onExitActions != nil {
 			for index, action := range onExitActions {
 				if err := action(c, e); err != nil {
 					return &ErrAction{
@@ -412,11 +410,6 @@ func (s *StateNode) executeOnExitActions(c Context, e Event) error {
 					}
 				}
 			}
-		}
-
-		// Be sure to execute the OnEntry actions of the root state node, which has a parentStateNode of nil.
-		if stateNodeToExit == nil {
-			break
 		}
 
 		stateNodeToExit = stateNodeToExit.parentStateNode
@@ -602,7 +595,7 @@ func (machine *Machine) Send(event Event) (*StateNode, error) {
 				continue
 			}
 
-			var stateNodeToEnter *StateNode = machine.current
+			stateNodeToEnter := machine.current
 			if target := transition.Target; target != NoneState {
 				// Get parent node to be able to target sibbling state nodes.
 				parentStateNode := stateNode.parentStateNode
