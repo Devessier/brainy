@@ -368,15 +368,12 @@ func (s *StateNode) executeOnEntryActions(c Context, e Event) error {
 
 	stateNodeToEntry := s
 
-	for {
-		if onEntryActions := s.OnEntry; onEntryActions != nil {
+	for stateNodeToEntry != nil {
+		if onEntryActions := stateNodeToEntry.OnEntry; onEntryActions != nil {
 			actionsToCall = append(actionsToCall, onEntryActions...)
 		}
 
 		// Be sure to execute the OnEntry actions of the root state node, which has a parentStateNode of nil.
-		if stateNodeToEntry == nil {
-			break
-		}
 
 		stateNodeToEntry = stateNodeToEntry.parentStateNode
 	}
