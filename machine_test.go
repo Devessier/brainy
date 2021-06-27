@@ -2,7 +2,6 @@ package brainy_test
 
 import (
 	"errors"
-	"fmt"
 	"testing"
 
 	"github.com/Devessier/brainy"
@@ -528,10 +527,31 @@ func TestCompoundStates(t *testing.T) {
 
 		GoToNestedBState  brainy.EventType = "GO_TO_NESTED_B_STATE"
 		ExitCompoundState brainy.EventType = "EXIT_COMPOUND_STATE"
+
+		CompoundStateOnEntry string = "CompoundStateOnEntry"
+		NestedAStateOnEntry  string = "CompoundStateOnEntry"
+		NestedBStateOnEntry  string = "CompoundStateOnEntry"
+		AtomicStateOnEntry   string = "AtomicStateOnEntry"
 	)
 
+	calledActions := make([]string, 0)
+
 	compoundStateOnEntryAction := new(mocks.Action)
-	compoundStateOnEntryAction.On("Execute", mock.Anything, mock.Anything).Return(nil)
+	compoundStateOnEntryAction.On("Execute", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+		calledActions = append(calledActions, CompoundStateOnEntry)
+	})
+	nestedAStateStateOnEntryAction := new(mocks.Action)
+	nestedAStateStateOnEntryAction.On("Execute", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+		calledActions = append(calledActions, NestedAStateOnEntry)
+	})
+	nestedBStateStateOnEntryAction := new(mocks.Action)
+	nestedBStateStateOnEntryAction.On("Execute", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+		calledActions = append(calledActions, NestedBStateOnEntry)
+	})
+	atomicStateOnEntryAction := new(mocks.Action)
+	atomicStateOnEntryAction.On("Execute", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+		calledActions = append(calledActions, AtomicStateOnEntry)
+	})
 
 	compoundStateMachine, err := brainy.NewMachine(brainy.StateNode{
 		Initial: CompoundState,
@@ -547,11 +567,7 @@ func TestCompoundStates(t *testing.T) {
 				States: brainy.StateNodes{
 					NestedAState: &brainy.StateNode{
 						OnEntry: brainy.Actions{
-							func(c brainy.Context, e brainy.Event) error {
-								fmt.Println("nested a state entered")
-
-								return nil
-							},
+							nestedAStateStateOnEntryAction.Execute,
 						},
 
 						On: brainy.Events{
@@ -561,11 +577,7 @@ func TestCompoundStates(t *testing.T) {
 
 					NestedBState: &brainy.StateNode{
 						OnEntry: brainy.Actions{
-							func(c brainy.Context, e brainy.Event) error {
-								fmt.Println("nested a state entered")
-
-								return nil
-							},
+							nestedBStateStateOnEntryAction.Execute,
 						},
 					},
 				},
@@ -576,6 +588,10 @@ func TestCompoundStates(t *testing.T) {
 			},
 
 			AtomicState: &brainy.StateNode{
+				OnEntry: brainy.Actions{
+					atomicStateOnEntryAction.Execute,
+				},
+
 				On: brainy.Events{
 					GoToNestedBState: brainy.CompoundTarget{
 						CompoundState: NestedBState,
@@ -587,10 +603,29 @@ func TestCompoundStates(t *testing.T) {
 	assert.NotNil(compoundStateMachine)
 	assert.NoError(err)
 
-	compoundStateOnEntryAction.AssertCalled(t, "Execute", mock.Anything, mock.Anything)
+	compoundStateOnEntryAction.AssertCalled(t, "Execute", nil, brainy.InitialTransitionEventType)
+	nestedAStateStateOnEntryAction.AssertCalled(t, "Execute", nil, brainy.InitialTransitionEventType)
 	assert.Contains(compoundStateMachine.Current().Value(), brainy.JoinStatesIDs(CompoundState, NestedAState))
 
-	nextState, err := compoundStateMachine.Send(ExitCompoundState)
+	nextState, err := compoundStateMachine.Send(GoToNestedBState)
+	assert.NoError(err)
+	assert.Contains(nextState.Value(), brainy.JoinStatesIDs(CompoundState, NestedBState))
+
+	nextState, err = compoundStateMachine.Send(ExitCompoundState)
 	assert.NoError(err)
 	assert.Contains(nextState.Value(), brainy.JoinStatesIDs(AtomicState))
+
+	assert.Equal([]string{
+		CompoundStateOnEntry,
+		NestedAStateOnEntry,
+
+		CompoundStateOnEntry,
+		NestedBStateOnEntry,
+
+		AtomicStateOnEntry,
+	}, calledActions)
+	compoundStateOnEntryAction.AssertExpectations(t)
+	nestedAStateStateOnEntryAction.AssertExpectations(t)
+	nestedBStateStateOnEntryAction.AssertExpectations(t)
+	atomicStateOnEntryAction.AssertExpectations(t)
 }
