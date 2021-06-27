@@ -183,6 +183,8 @@ func (e EventType) eventType() EventType {
 	return e
 }
 
+const InitialTransitionEventType EventType = "_INITIAL_TRANSITION"
+
 // Context holds data passed to actions and guards functions.
 // It can contain what user wants.
 type Context interface{}
@@ -541,6 +543,9 @@ func (machine *Machine) init() error {
 	}
 
 	machine.current = machine.StateNode.resolveMostNestedInitialStateNode()
+	if err := machine.current.executeOnEntryActions(machine.current.Context, InitialTransitionEventType); err != nil {
+		return err
+	}
 
 	return nil
 }
