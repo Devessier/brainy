@@ -314,18 +314,45 @@ type StateNode struct {
 	On Events
 
 	parentStateNode *StateNode
+	machineID       StateType
 }
 
 func (s *StateNode) Value() string {
 	return s.id
 }
 
-func (s *StateNode) setChildrenStateNodesIDs(parentStateNodeID string) {
+// Matches returns whether or not the state node is a descendant of the parent state value.
+// It takes the parent state value as a variadic list of StateType.
+//
+// Given that the id of the StateNode is `compound.atomic`:
+//  state.Matches(CompoundState)
+//  // => true
+//
+//  state.Matches(CompoundState, AtomicState)
+//  // => true
+//
+//  state.Matches(UnknownState)
+//  // => false
+func (s *StateNode) Matches(stateSelectors ...StateType) bool {
+	selectorsWithMachineID := make([]StateType, 0, len(stateSelectors)+1)
+	selectorsWithMachineID = append(selectorsWithMachineID, s.machineID)
+	for _, stateSelector := range stateSelectors {
+		selectorsWithMachineID = append(selectorsWithMachineID, stateSelector)
+	}
+
+	rebuiltStateID := JoinStatesIDs(selectorsWithMachineID...)
+
+	doesMatch := strings.HasPrefix(s.id, rebuiltStateID)
+	return doesMatch
+}
+
+func (s *StateNode) setChildrenStateNodesIDs(parentStateNodeID string, machineID StateType) {
 	for childStateNodeName, childStateNode := range s.States {
 		childStateNode.id = parentStateNodeID + "." + childStateNodeName.String()
+		childStateNode.machineID = machineID
 
 		if childStateNode.isCompound() {
-			childStateNode.setChildrenStateNodesIDs(childStateNode.id)
+			childStateNode.setChildrenStateNodesIDs(childStateNode.id, machineID)
 		}
 	}
 }
@@ -502,17 +529,19 @@ type Machine struct {
 }
 
 func (machine *Machine) setStateNodesIDs() {
-	rootID := machine.ID
+	var rootID StateType = StateType(machine.ID)
 	if rootID == "" {
 		rootID = "(machine)"
 	}
 
-	machine.StateNode.id = rootID
+	machine.StateNode.id = string(rootID)
+	machine.StateNode.machineID = rootID
 
 	for stateNodeName, stateNode := range machine.StateNode.States {
 		stateNode.id = machine.StateNode.id + "." + stateNodeName.String()
+		stateNode.machineID = rootID
 
-		stateNode.setChildrenStateNodesIDs(stateNode.id)
+		stateNode.setChildrenStateNodesIDs(stateNode.id, rootID)
 	}
 }
 

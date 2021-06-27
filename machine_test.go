@@ -40,22 +40,22 @@ func TestOnOffMachine(t *testing.T) {
 	})
 	assert.NoError(err)
 
-	assert.Contains(onOffMachine.Current().Value(), OffState.String())
+	assert.True(onOffMachine.Current().Matches(OffState))
 
 	nextState, err := onOffMachine.Send(OnEvent)
 	assert.NoError(err)
-	assert.Contains(nextState.Value(), OnState.String())
-	assert.Contains(onOffMachine.Current().Value(), OnState.String())
+	assert.True(nextState.Matches(OnState))
+	assert.True(onOffMachine.Current().Matches(OnState))
 
 	nextState, err = onOffMachine.Send(OnEvent)
-	assert.Contains(nextState.Value(), OnState.String())
+	assert.True(nextState.Matches(OnState))
 	assert.Error(err)
 	assert.ErrorIs(err, brainy.ErrInvalidTransitionNotImplemented)
 
 	nextState, err = onOffMachine.Send(OffEvent)
 	assert.NoError(err)
-	assert.Contains(nextState.Value(), OffState.String())
-	assert.Contains(onOffMachine.Current().Value(), OffState.String())
+	assert.True(nextState.Matches(OffState))
+	assert.True(onOffMachine.Current().Matches(OffState))
 }
 
 const (
@@ -105,11 +105,11 @@ func TestCondIsTrueByDefault(t *testing.T) {
 	})
 	assert.NoError(err)
 
-	assert.Contains(onOffMachine.Current().Value(), brainy.JoinStatesIDs(OffState))
+	assert.True(onOffMachine.Current().Matches(OffState))
 
 	onOffMachine.Send(OnEvent)
 
-	assert.Contains(onOffMachine.Current().Value(), brainy.JoinStatesIDs(OnState))
+	assert.True(onOffMachine.Current().Matches(OnState))
 }
 
 func TestCondTakesAGuardFunction(t *testing.T) {
@@ -144,18 +144,18 @@ func TestCondTakesAGuardFunction(t *testing.T) {
 	})
 	assert.NoError(err)
 
-	assert.Contains(onOffMachine.Current().Value(), brainy.JoinStatesIDs(OnState))
+	assert.True(onOffMachine.Current().Matches(OnState))
 
 	_, err = onOffMachine.Send(OffEvent)
 	assert.NoError(err)
 
-	assert.Contains(onOffMachine.Current().Value(), brainy.JoinStatesIDs(OffState))
+	assert.True(onOffMachine.Current().Matches(OffState))
 
 	_, err = onOffMachine.Send(OnEvent)
 	assert.Error(err)
 	assert.ErrorIs(err, brainy.ErrInvalidTransitionNotImplemented)
 
-	assert.Contains(onOffMachine.Current().Value(), brainy.JoinStatesIDs(OffState))
+	assert.True(onOffMachine.Current().Matches(OffState))
 }
 
 func TestAllActionsOfATransitionAreCalled(t *testing.T) {
@@ -200,12 +200,12 @@ func TestAllActionsOfATransitionAreCalled(t *testing.T) {
 	})
 	assert.NoError(err)
 
-	assert.Contains(onOffMachine.Current().Value(), brainy.JoinStatesIDs(OnState))
+	assert.True(onOffMachine.Current().Matches(OnState))
 
 	_, err = onOffMachine.Send(OffEvent)
 	assert.NoError(err)
 
-	assert.Contains(onOffMachine.Current().Value(), brainy.JoinStatesIDs(OffState))
+	assert.True(onOffMachine.Current().Matches(OffState))
 	firstTransitionAction.AssertExpectations(t)
 	secondTransitionAction.AssertExpectations(t)
 	thirdTransitionAction.AssertExpectations(t)
@@ -253,14 +253,14 @@ func TestAFailingActionShortCircuitsTransition(t *testing.T) {
 	})
 	assert.NoError(err)
 
-	assert.Contains(onOffMachine.Current().Value(), brainy.JoinStatesIDs(OnState))
+	assert.True(onOffMachine.Current().Matches(OnState))
 
 	nextState, err := onOffMachine.Send(OffEvent)
-	assert.Contains(nextState.Value(), brainy.JoinStatesIDs(OnState))
+	assert.True(nextState.Matches(OnState))
 	assert.Error(err)
 	assert.ErrorIs(err, unexpectedError)
 
-	assert.Contains(onOffMachine.Current().Value(), brainy.JoinStatesIDs(OnState))
+	assert.True(onOffMachine.Current().Matches(OnState))
 	firstTransitionAction.AssertExpectations(t)
 	secondTransitionAction.AssertExpectations(t)
 	thirdTransitionAction.AssertNotCalled(t, "Execute", mock.Anything, mock.Anything)
@@ -313,19 +313,19 @@ func TestStateMachineWithTransitionsWithoutTargets(t *testing.T) {
 
 	nextState, err := incrementVariableInContextMachine.Send(NewIncrementEvent(2))
 	assert.NotNil(nextState)
-	assert.Contains(nextState.Value(), brainy.JoinStatesIDs(IncrementState))
+	assert.True(nextState.Matches(IncrementState))
 	assert.NoError(err)
 	assert.Equal(2, stateMachineContext.ToIncrement)
 
 	nextState, err = incrementVariableInContextMachine.Send(IncrementEventType)
 	assert.NotNil(nextState)
-	assert.Contains(nextState.Value(), brainy.JoinStatesIDs(IncrementState))
+	assert.True(nextState.Matches(IncrementState))
 	assert.NoError(err)
 	assert.Equal(3, stateMachineContext.ToIncrement)
 
 	nextState, err = incrementVariableInContextMachine.Send(UnknownEventType)
 	assert.NotNil(nextState)
-	assert.Contains(nextState.Value(), brainy.JoinStatesIDs(IncrementState))
+	assert.True(nextState.Matches(IncrementState))
 	assert.Error(err)
 	assert.ErrorIs(err, brainy.ErrInvalidTransitionNotImplemented)
 	assert.Equal(3, stateMachineContext.ToIncrement)
@@ -371,12 +371,12 @@ func TestOnlyOneTransitionCanBeTaken(t *testing.T) {
 	})
 	assert.NoError(err)
 
-	assert.Contains(onOffMachine.Current().Value(), brainy.JoinStatesIDs(OffState))
+	assert.True(onOffMachine.Current().Matches(OffState))
 
 	_, err = onOffMachine.Send(OnEvent)
 	assert.NoError(err)
 
-	assert.Contains(onOffMachine.Current().Value(), brainy.JoinStatesIDs(OnState))
+	assert.True(onOffMachine.Current().Matches(OnState))
 	firstGuardCondition.AssertExpectations(t)
 	secondGuardCondition.AssertNumberOfCalls(t, "Execute", 0)
 	thirdGuardCondition.AssertNumberOfCalls(t, "Execute", 0)
@@ -434,12 +434,12 @@ func TestOnEntryThenActionsThenOnExitAreCalled(t *testing.T) {
 	})
 	assert.NoError(err)
 
-	assert.Contains(onOffMachine.Current().Value(), brainy.JoinStatesIDs(OffState))
+	assert.True(onOffMachine.Current().Matches(OffState))
 
 	_, err = onOffMachine.Send(OnEvent)
 	assert.NoError(err)
 
-	assert.Contains(onOffMachine.Current().Value(), brainy.JoinStatesIDs(OnState))
+	assert.True(onOffMachine.Current().Matches(OnState))
 	onExitOffStateAction.AssertExpectations(t)
 	transitionAction.AssertExpectations(t)
 	onEnterOnStateAction.AssertExpectations(t)
@@ -480,14 +480,14 @@ func TestFailingEntryActionAbortsTransition(t *testing.T) {
 	})
 	assert.NoError(err)
 
-	assert.Contains(onOffMachine.Current().Value(), brainy.JoinStatesIDs(OffState))
+	assert.True(onOffMachine.Current().Matches(OffState))
 
 	nextState, err := onOffMachine.Send(OnEvent)
-	assert.Contains(nextState.Value(), brainy.JoinStatesIDs(OffState))
+	assert.True(nextState.Matches(OffState))
 	assert.Error(err)
 	assert.ErrorIs(err, failingOnExitTransitionError)
 
-	assert.Contains(onOffMachine.Current().Value(), brainy.JoinStatesIDs(OffState))
+	assert.True(onOffMachine.Current().Matches(OffState))
 	failingOnEntryTransition.AssertExpectations(t)
 }
 
@@ -605,15 +605,16 @@ func TestCompoundStates(t *testing.T) {
 
 	compoundStateOnEntryAction.AssertCalled(t, "Execute", nil, brainy.InitialTransitionEventType)
 	nestedAStateStateOnEntryAction.AssertCalled(t, "Execute", nil, brainy.InitialTransitionEventType)
-	assert.Contains(compoundStateMachine.Current().Value(), brainy.JoinStatesIDs(CompoundState, NestedAState))
+	assert.True(compoundStateMachine.Current().Matches(CompoundState, NestedAState))
+	assert.True(compoundStateMachine.Current().Matches(CompoundState, NestedAState))
 
 	nextState, err := compoundStateMachine.Send(GoToNestedBState)
 	assert.NoError(err)
-	assert.Contains(nextState.Value(), brainy.JoinStatesIDs(CompoundState, NestedBState))
+	assert.True(nextState.Matches(CompoundState, NestedBState))
 
 	nextState, err = compoundStateMachine.Send(ExitCompoundState)
 	assert.NoError(err)
-	assert.Contains(nextState.Value(), brainy.JoinStatesIDs(AtomicState))
+	assert.True(nextState.Matches(AtomicState))
 
 	assert.Equal([]string{
 		CompoundStateOnEntry,
