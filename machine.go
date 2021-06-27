@@ -627,12 +627,12 @@ func (machine *Machine) Send(event Event) (*StateNode, error) {
 				}
 			}
 
-			machine.previous = machine.current
-			machine.current = stateNodeToEnter
-
-			if err := machine.current.executeOnEntryActions(machine.StateNode.Context, event); err != nil {
+			if err := stateNodeToEnter.executeOnEntryActions(machine.StateNode.Context, event); err != nil {
 				return machine.current, err
 			}
+
+			machine.previous = machine.current
+			machine.current = stateNodeToEnter
 
 			return machine.current, nil
 		}

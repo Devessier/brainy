@@ -451,47 +451,46 @@ func TestOnEntryThenActionsThenOnExitAreCalled(t *testing.T) {
 	}, actionsCallsOrder)
 }
 
-// func TestFailingEntryActionAbortsTransition(t *testing.T) {
-// 	assert := assert.New(t)
+func TestFailingEntryActionAbortsTransition(t *testing.T) {
+	assert := assert.New(t)
 
-// 	onOffMachineContext := &struct{}{}
-// 	failingOnExitTransitionError := errors.New("this action must fail")
+	onOffMachineContext := &struct{}{}
+	failingOnExitTransitionError := errors.New("this action must fail")
 
-// 	failingOnEntryTransition := new(mocks.Action)
-// 	failingOnEntryTransition.On("Execute", onOffMachineContext, OnEvent).Return(failingOnExitTransitionError)
+	failingOnEntryTransition := new(mocks.Action)
+	failingOnEntryTransition.On("Execute", onOffMachineContext, OnEvent).Return(failingOnExitTransitionError)
 
-// 	onOffMachine, err := brainy.NewMachine(brainy.StateNode{
-// 		Initial: OffState,
+	onOffMachine, err := brainy.NewMachine(brainy.StateNode{
+		Initial: OffState,
 
-// 		Context: onOffMachineContext,
+		Context: onOffMachineContext,
 
-// 		States: brainy.StateNodes{
-// 			OnState: brainy.StateNode{
-// 				OnEntry: brainy.Actions{
-// 					failingOnEntryTransition.Execute,
-// 				},
-// 			},
+		States: brainy.StateNodes{
+			OnState: &brainy.StateNode{
+				OnEntry: brainy.Actions{
+					failingOnEntryTransition.Execute,
+				},
+			},
 
-// 			OffState: brainy.StateNode{
+			OffState: &brainy.StateNode{
+				On: brainy.Events{
+					OnEvent: OnState,
+				},
+			},
+		},
+	})
+	assert.NoError(err)
 
-// 				On: brainy.Events{
-// 					OnEvent: OnState,
-// 				},
-// 			},
-// 		},
-// 	})
-// 	assert.NoError(err)
+	assert.Contains(onOffMachine.Current().Value(), brainy.JoinStatesIDs(OffState))
 
-// 	assert.Equal(OffState, onOffMachine.Current())
+	nextState, err := onOffMachine.Send(OnEvent)
+	assert.Contains(nextState.Value(), brainy.JoinStatesIDs(OffState))
+	assert.Error(err)
+	assert.ErrorIs(err, failingOnExitTransitionError)
 
-// 	nextState, err := onOffMachine.Send(OnEvent)
-// 	assert.Equal(OffState, nextState)
-// 	assert.Error(err)
-// 	assert.ErrorIs(err, failingOnExitTransitionError)
-
-// 	assert.Equal(OffState, onOffMachine.Current())
-// 	failingOnEntryTransition.AssertExpectations(t)
-// }
+	assert.Contains(onOffMachine.Current().Value(), brainy.JoinStatesIDs(OffState))
+	failingOnEntryTransition.AssertExpectations(t)
+}
 
 // func TestPreemptivelyValidatesTransitions(t *testing.T) {
 // 	assert := assert.New(t)
