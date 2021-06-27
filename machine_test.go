@@ -1,6 +1,7 @@
 package brainy_test
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 
@@ -58,273 +59,278 @@ func TestOnOffMachine(t *testing.T) {
 	assert.Contains(onOffMachine.Current().Value(), OffState.String())
 }
 
-// const (
-// 	IncrementState brainy.StateType = "increment"
+const (
+	IncrementState brainy.StateType = "increment"
 
-// 	IncrementEventType brainy.EventType = "INCREMENT"
-// 	UnknownEventType   brainy.EventType = "UNKNOWN"
-// )
+	IncrementEventType brainy.EventType = "INCREMENT"
+	UnknownEventType   brainy.EventType = "UNKNOWN"
+)
 
-// type IncrementEvent struct {
-// 	brainy.EventWithType
-// 	IncrementBy int
-// }
+type IncrementEvent struct {
+	brainy.EventWithType
+	IncrementBy int
+}
 
-// func NewIncrementEvent(incrementBy int) IncrementEvent {
-// 	return IncrementEvent{
-// 		EventWithType: brainy.EventWithType{
-// 			Event: IncrementEventType,
-// 		},
-// 		IncrementBy: incrementBy,
-// 	}
-// }
+func NewIncrementEvent(incrementBy int) IncrementEvent {
+	return IncrementEvent{
+		EventWithType: brainy.EventWithType{
+			Event: IncrementEventType,
+		},
+		IncrementBy: incrementBy,
+	}
+}
 
-// type IncrementStateMachineContext struct {
-// 	ToIncrement int
-// }
+type IncrementStateMachineContext struct {
+	ToIncrement int
+}
 
-// func TestCondIsTrueByDefault(t *testing.T) {
-// 	assert := assert.New(t)
+func TestCondIsTrueByDefault(t *testing.T) {
+	assert := assert.New(t)
 
-// 	onOffMachine, err := brainy.NewMachine(brainy.StateNode{
-// 		Initial: OffState,
+	onOffMachine, err := brainy.NewMachine(brainy.StateNode{
+		Initial: OffState,
 
-// 		States: brainy.StateNodes{
-// 			OnState: brainy.StateNode{
-// 				On: brainy.Events{
-// 					OffEvent: OffState,
-// 				},
-// 			},
+		States: brainy.StateNodes{
+			OnState: &brainy.StateNode{
+				On: brainy.Events{
+					OffEvent: OffState,
+				},
+			},
 
-// 			OffState: brainy.StateNode{
-// 				On: brainy.Events{
-// 					OnEvent: OnState,
-// 				},
-// 			},
-// 		},
-// 	})
-// 	assert.NoError(err)
+			OffState: &brainy.StateNode{
+				On: brainy.Events{
+					OnEvent: OnState,
+				},
+			},
+		},
+	})
+	assert.NoError(err)
 
-// 	assert.Equal(OffState, onOffMachine.Current())
+	assert.Contains(onOffMachine.Current().Value(), brainy.JoinStatesIDs(OffState))
 
-// 	onOffMachine.Send(OnEvent)
+	onOffMachine.Send(OnEvent)
 
-// 	assert.Equal(OnState, onOffMachine.Current())
-// }
+	assert.Contains(onOffMachine.Current().Value(), brainy.JoinStatesIDs(OnState))
+}
 
-// func TestCondTakesAGuardFunction(t *testing.T) {
-// 	assert := assert.New(t)
+func TestCondTakesAGuardFunction(t *testing.T) {
+	assert := assert.New(t)
 
-// 	onOffMachine, err := brainy.NewMachine(brainy.StateNode{
-// 		Initial: OnState,
+	onOffMachine, err := brainy.NewMachine(brainy.StateNode{
+		Initial: OnState,
 
-// 		States: brainy.StateNodes{
-// 			OnState: brainy.StateNode{
-// 				On: brainy.Events{
-// 					OffEvent: brainy.Transition{
-// 						Cond: func(c brainy.Context, e brainy.Event) bool {
-// 							return true
-// 						},
-// 						Target: OffState,
-// 					},
-// 				},
-// 			},
+		States: brainy.StateNodes{
+			OnState: &brainy.StateNode{
+				On: brainy.Events{
+					OffEvent: brainy.Transition{
+						Cond: func(c brainy.Context, e brainy.Event) bool {
+							return true
+						},
+						Target: OffState,
+					},
+				},
+			},
 
-// 			OffState: brainy.StateNode{
-// 				On: brainy.Events{
-// 					OnEvent: brainy.Transition{
-// 						Cond: func(c brainy.Context, e brainy.Event) bool {
-// 							return false
-// 						},
-// 						Target: OnState,
-// 					},
-// 				},
-// 			},
-// 		},
-// 	})
-// 	assert.NoError(err)
+			OffState: &brainy.StateNode{
+				On: brainy.Events{
+					OnEvent: brainy.Transition{
+						Cond: func(c brainy.Context, e brainy.Event) bool {
+							return false
+						},
+						Target: OnState,
+					},
+				},
+			},
+		},
+	})
+	assert.NoError(err)
 
-// 	assert.Equal(OnState, onOffMachine.Current())
+	assert.Contains(onOffMachine.Current().Value(), brainy.JoinStatesIDs(OnState))
 
-// 	_, err = onOffMachine.Send(OffEvent)
-// 	assert.NoError(err)
+	_, err = onOffMachine.Send(OffEvent)
+	assert.NoError(err)
 
-// 	assert.Equal(OffState, onOffMachine.Current())
+	assert.Contains(onOffMachine.Current().Value(), brainy.JoinStatesIDs(OffState))
 
-// 	_, err = onOffMachine.Send(OnEvent)
-// 	assert.NoError(err)
+	_, err = onOffMachine.Send(OnEvent)
+	assert.Error(err)
+	assert.ErrorIs(err, brainy.ErrInvalidTransitionNotImplemented)
 
-// 	assert.Equal(OffState, onOffMachine.Current())
-// }
+	assert.Contains(onOffMachine.Current().Value(), brainy.JoinStatesIDs(OffState))
+}
 
-// func TestAllActionsOfATransitionAreCalled(t *testing.T) {
-// 	assert := assert.New(t)
+func TestAllActionsOfATransitionAreCalled(t *testing.T) {
+	assert := assert.New(t)
 
-// 	onOffMachineContext := &struct{}{}
+	onOffMachineContext := &struct{}{}
 
-// 	firstTransitionAction := new(mocks.Action)
-// 	firstTransitionAction.On("Execute", onOffMachineContext, OffEvent).Return(nil)
-// 	secondTransitionAction := new(mocks.Action)
-// 	secondTransitionAction.On("Execute", onOffMachineContext, OffEvent).Return(nil)
-// 	thirdTransitionAction := new(mocks.Action)
-// 	thirdTransitionAction.On("Execute", onOffMachineContext, OffEvent).Return(nil)
+	firstTransitionAction := new(mocks.Action)
+	firstTransitionAction.On("Execute", onOffMachineContext, OffEvent).Return(nil)
+	secondTransitionAction := new(mocks.Action)
+	secondTransitionAction.On("Execute", onOffMachineContext, OffEvent).Return(nil)
+	thirdTransitionAction := new(mocks.Action)
+	thirdTransitionAction.On("Execute", onOffMachineContext, OffEvent).Return(nil)
 
-// 	onOffMachine, err := brainy.NewMachine(brainy.StateNode{
-// 		Initial: OnState,
+	onOffMachine, err := brainy.NewMachine(brainy.StateNode{
+		Initial: OnState,
 
-// 		Context: onOffMachineContext,
+		Context: onOffMachineContext,
 
-// 		States: brainy.StateNodes{
-// 			OnState: brainy.StateNode{
-// 				On: brainy.Events{
-// 					OffEvent: brainy.Transition{
-// 						Target: OffState,
-// 						Actions: brainy.Actions{
-// 							firstTransitionAction.Execute,
-// 							secondTransitionAction.Execute,
-// 							thirdTransitionAction.Execute,
-// 						},
-// 					},
-// 				},
-// 			},
+		States: brainy.StateNodes{
+			OnState: &brainy.StateNode{
+				On: brainy.Events{
+					OffEvent: brainy.Transition{
+						Target: OffState,
+						Actions: brainy.Actions{
+							firstTransitionAction.Execute,
+							secondTransitionAction.Execute,
+							thirdTransitionAction.Execute,
+						},
+					},
+				},
+			},
 
-// 			OffState: brainy.StateNode{
-// 				On: brainy.Events{
-// 					OnEvent: brainy.Transition{
-// 						Target: OnState,
-// 					},
-// 				},
-// 			},
-// 		},
-// 	})
-// 	assert.NoError(err)
+			OffState: &brainy.StateNode{
+				On: brainy.Events{
+					OnEvent: brainy.Transition{
+						Target: OnState,
+					},
+				},
+			},
+		},
+	})
+	assert.NoError(err)
 
-// 	assert.Equal(OnState, onOffMachine.Current())
+	assert.Contains(onOffMachine.Current().Value(), brainy.JoinStatesIDs(OnState))
 
-// 	_, err = onOffMachine.Send(OffEvent)
-// 	assert.NoError(err)
+	_, err = onOffMachine.Send(OffEvent)
+	assert.NoError(err)
 
-// 	assert.Equal(OffState, onOffMachine.Current())
-// 	firstTransitionAction.AssertExpectations(t)
-// 	secondTransitionAction.AssertExpectations(t)
-// 	thirdTransitionAction.AssertExpectations(t)
-// }
-// func TestAFailingActionShortCircuitsTransition(t *testing.T) {
-// 	assert := assert.New(t)
+	assert.Contains(onOffMachine.Current().Value(), brainy.JoinStatesIDs(OffState))
+	firstTransitionAction.AssertExpectations(t)
+	secondTransitionAction.AssertExpectations(t)
+	thirdTransitionAction.AssertExpectations(t)
+}
 
-// 	onOffMachineContext := &struct{}{}
-// 	unexpectedError := errors.New("this action must fail")
+func TestAFailingActionShortCircuitsTransition(t *testing.T) {
+	assert := assert.New(t)
 
-// 	firstTransitionAction := new(mocks.Action)
-// 	firstTransitionAction.On("Execute", onOffMachineContext, OffEvent).Return(nil)
-// 	secondTransitionAction := new(mocks.Action)
-// 	secondTransitionAction.On("Execute", onOffMachineContext, OffEvent).Return(unexpectedError)
-// 	thirdTransitionAction := new(mocks.Action)
+	onOffMachineContext := &struct{}{}
+	unexpectedError := errors.New("this action must fail")
 
-// 	onOffMachine, err := brainy.NewMachine(brainy.StateNode{
-// 		Initial: OnState,
+	firstTransitionAction := new(mocks.Action)
+	firstTransitionAction.On("Execute", onOffMachineContext, OffEvent).Return(nil)
+	secondTransitionAction := new(mocks.Action)
+	secondTransitionAction.On("Execute", onOffMachineContext, OffEvent).Return(unexpectedError)
+	thirdTransitionAction := new(mocks.Action)
 
-// 		Context: onOffMachineContext,
+	onOffMachine, err := brainy.NewMachine(brainy.StateNode{
+		Initial: OnState,
 
-// 		States: brainy.StateNodes{
-// 			OnState: brainy.StateNode{
-// 				On: brainy.Events{
-// 					OffEvent: brainy.Transition{
-// 						Target: OffState,
-// 						Actions: brainy.Actions{
-// 							firstTransitionAction.Execute,
-// 							secondTransitionAction.Execute,
-// 							thirdTransitionAction.Execute,
-// 						},
-// 					},
-// 				},
-// 			},
+		Context: onOffMachineContext,
 
-// 			OffState: brainy.StateNode{
-// 				On: brainy.Events{
-// 					OnEvent: brainy.Transition{
-// 						Target: OnState,
-// 					},
-// 				},
-// 			},
-// 		},
-// 	})
-// 	assert.NoError(err)
+		States: brainy.StateNodes{
+			OnState: &brainy.StateNode{
+				On: brainy.Events{
+					OffEvent: brainy.Transition{
+						Target: OffState,
+						Actions: brainy.Actions{
+							firstTransitionAction.Execute,
+							secondTransitionAction.Execute,
+							thirdTransitionAction.Execute,
+						},
+					},
+				},
+			},
 
-// 	assert.Equal(OnState, onOffMachine.Current())
+			OffState: &brainy.StateNode{
+				On: brainy.Events{
+					OnEvent: brainy.Transition{
+						Target: OnState,
+					},
+				},
+			},
+		},
+	})
+	assert.NoError(err)
 
-// 	nextState, err := onOffMachine.Send(OffEvent)
-// 	assert.Equal(OnState, nextState)
-// 	assert.Error(err)
-// 	assert.ErrorIs(err, unexpectedError)
+	assert.Contains(onOffMachine.Current().Value(), brainy.JoinStatesIDs(OnState))
 
-// 	assert.Equal(OnState, onOffMachine.Current())
-// 	firstTransitionAction.AssertExpectations(t)
-// 	secondTransitionAction.AssertExpectations(t)
-// 	thirdTransitionAction.AssertNotCalled(t, "Execute", mock.Anything, mock.Anything)
-// }
+	nextState, err := onOffMachine.Send(OffEvent)
+	assert.Contains(nextState.Value(), brainy.JoinStatesIDs(OnState))
+	assert.Error(err)
+	assert.ErrorIs(err, unexpectedError)
 
-// func TestStateMachineWithTransitionsWithoutTargets(t *testing.T) {
-// 	assert := assert.New(t)
+	assert.Contains(onOffMachine.Current().Value(), brainy.JoinStatesIDs(OnState))
+	firstTransitionAction.AssertExpectations(t)
+	secondTransitionAction.AssertExpectations(t)
+	thirdTransitionAction.AssertNotCalled(t, "Execute", mock.Anything, mock.Anything)
+}
 
-// 	stateMachineContext := IncrementStateMachineContext{
-// 		ToIncrement: 0,
-// 	}
+func TestStateMachineWithTransitionsWithoutTargets(t *testing.T) {
+	assert := assert.New(t)
 
-// 	incrementVariableInContextMachine, err := brainy.NewMachine(brainy.StateNode{
-// 		Initial: IncrementState,
+	stateMachineContext := IncrementStateMachineContext{
+		ToIncrement: 0,
+	}
 
-// 		Context: &stateMachineContext,
+	incrementVariableInContextMachine, err := brainy.NewMachine(brainy.StateNode{
+		Initial: IncrementState,
 
-// 		States: brainy.StateNodes{
-// 			IncrementState: brainy.StateNode{
-// 				On: brainy.Events{
-// 					IncrementEventType: brainy.Transitions{
-// 						brainy.Transition{
-// 							Cond: func(c brainy.Context, e brainy.Event) bool {
-// 								return true
-// 							},
-// 							Target: brainy.NoneState,
-// 							Actions: brainy.Actions{
-// 								func(c brainy.Context, e brainy.Event) error {
-// 									ctx := c.(*IncrementStateMachineContext)
+		Context: &stateMachineContext,
 
-// 									switch ev := e.(type) {
-// 									case IncrementEvent:
-// 										ctx.ToIncrement += ev.IncrementBy
-// 									default:
-// 										ctx.ToIncrement += 1
-// 									}
+		States: brainy.StateNodes{
+			IncrementState: &brainy.StateNode{
+				On: brainy.Events{
+					IncrementEventType: brainy.Transitions{
+						brainy.Transition{
+							Cond: func(c brainy.Context, e brainy.Event) bool {
+								return true
+							},
+							Target: brainy.NoneState,
+							Actions: brainy.Actions{
+								func(c brainy.Context, e brainy.Event) error {
+									ctx := c.(*IncrementStateMachineContext)
 
-// 									return nil
-// 								},
-// 							},
-// 						},
-// 					},
-// 				},
-// 			},
-// 		},
-// 	})
-// 	assert.NoError(err)
+									switch ev := e.(type) {
+									case IncrementEvent:
+										ctx.ToIncrement += ev.IncrementBy
+									default:
+										ctx.ToIncrement += 1
+									}
 
-// 	assert.Equal(0, stateMachineContext.ToIncrement)
+									return nil
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+	assert.NoError(err)
 
-// 	nextState, err := incrementVariableInContextMachine.Send(NewIncrementEvent(2))
-// 	assert.Equal(IncrementState, nextState)
-// 	assert.NoError(err)
-// 	assert.Equal(2, stateMachineContext.ToIncrement)
+	assert.Equal(0, stateMachineContext.ToIncrement)
 
-// 	nextState, err = incrementVariableInContextMachine.Send(IncrementEventType)
-// 	assert.Equal(IncrementState, nextState)
-// 	assert.NoError(err)
-// 	assert.Equal(3, stateMachineContext.ToIncrement)
+	nextState, err := incrementVariableInContextMachine.Send(NewIncrementEvent(2))
+	assert.NotNil(nextState)
+	assert.Contains(nextState.Value(), brainy.JoinStatesIDs(IncrementState))
+	assert.NoError(err)
+	assert.Equal(2, stateMachineContext.ToIncrement)
 
-// 	nextState, err = incrementVariableInContextMachine.Send(UnknownEventType)
-// 	assert.Equal(IncrementState, nextState)
-// 	assert.Error(err)
-// 	assert.ErrorIs(err, brainy.ErrInvalidTransitionNotImplemented)
-// 	assert.Equal(3, stateMachineContext.ToIncrement)
-// }
+	nextState, err = incrementVariableInContextMachine.Send(IncrementEventType)
+	assert.NotNil(nextState)
+	assert.Contains(nextState.Value(), brainy.JoinStatesIDs(IncrementState))
+	assert.NoError(err)
+	assert.Equal(3, stateMachineContext.ToIncrement)
+
+	nextState, err = incrementVariableInContextMachine.Send(UnknownEventType)
+	assert.NotNil(nextState)
+	assert.Contains(nextState.Value(), brainy.JoinStatesIDs(IncrementState))
+	assert.Error(err)
+	assert.ErrorIs(err, brainy.ErrInvalidTransitionNotImplemented)
+	assert.Equal(3, stateMachineContext.ToIncrement)
+}
 
 // func TestOnlyOneTransitionCanBeTaken(t *testing.T) {
 // 	assert := assert.New(t)
