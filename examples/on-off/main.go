@@ -15,11 +15,11 @@ const (
 )
 
 func main() {
-	lightSwitchStateMachine := brainy.Machine{
+	lightSwitchStateMachine, err := brainy.NewMachine(brainy.StateNode{
 		Initial: OffState,
 
-		StateNodes: brainy.StateNodes{
-			OnState: brainy.StateNode{
+		States: brainy.StateNodes{
+			OnState: &brainy.StateNode{
 				OnEntry: brainy.Actions{
 					func(c brainy.Context, e brainy.Event) error {
 						fmt.Println("Reached `on` state")
@@ -42,7 +42,7 @@ func main() {
 				},
 			},
 
-			OffState: brainy.StateNode{
+			OffState: &brainy.StateNode{
 				OnEntry: brainy.Actions{
 					func(c brainy.Context, e brainy.Event) error {
 						fmt.Println("Reached `off` state")
@@ -65,21 +65,28 @@ func main() {
 				},
 			},
 		},
+	})
+	if err != nil {
+		fmt.Printf("invalid state machine declaration: %s\n", err)
+		return
 	}
-	lightSwitchStateMachine.Init()
 
 	currentState := lightSwitchStateMachine.Current()
-	fmt.Printf("The current state of the state machine is: %s\n", currentState) // off
+	fmt.Printf("The current state of the state machine is: %s\n", currentState.Value()) // (machine).off
+	fmt.Printf("The light switch is off: %v\n", currentState.Matches(OffState))         // true
 
 	lightSwitchStateMachine.Send(ToggleEvent)
 
 	stateAfterFirstToggle := lightSwitchStateMachine.Current()
-	fmt.Printf("The state of the state machine after the first toogle is: %s\n", stateAfterFirstToggle) // on
+	fmt.Printf("The state of the state machine after the first toogle is: %s\n", stateAfterFirstToggle.Value()) // (machine).on
+	fmt.Printf("The light switch is on: %v\n", stateAfterFirstToggle.Matches(OnState))                          // true
 
 	lightSwitchStateMachine.Send(ToggleEvent)
 
 	stateAfterSecondToggle := lightSwitchStateMachine.Current()
-	fmt.Printf("The state of the state machine after the second toogle is: %s\n", stateAfterSecondToggle) // off
+	fmt.Printf("The state of the state machine after the second toogle is: %s\n", stateAfterSecondToggle.Value()) // (machine).off
+	fmt.Printf("Is the light switch on? %v\n", stateAfterSecondToggle.Matches(OnState))                           // false
+
 }
 
 // @@@SNIPEND

@@ -3,6 +3,7 @@ package brainy
 import (
 	"errors"
 	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -25,6 +26,7 @@ var (
 	//  	},
 	//  }
 	ErrInvalidTransitionInvalidCurrentState = errors.New("current state is unexpected")
+	ErrBlankInitialStateForCompoundState    = errors.New("expected an initial state for a compound state node")
 	// ErrInvalidTransitionFinalState is returned by Send method when the current state of the state
 	// machine does not have any event handler.
 	ErrInvalidTransitionFinalState = errors.New("final state reached")
@@ -34,6 +36,14 @@ var (
 	// Transitions validity is checked when .Init() method is called.
 	ErrInvalidTransitionNotImplemented = errors.New("transition not implemented")
 )
+
+type ErrInvalidInitialState struct {
+	InvalidInitialState StateType
+}
+
+func (err *ErrInvalidInitialState) Error() string {
+	return "initial state references an invalid state node: " + string(err.InvalidInitialState)
+}
 
 // ErrInvalidTransition means a transition could not be performed, holding the reason why.
 type ErrInvalidTransition struct {
@@ -105,10 +115,65 @@ func (s StateType) transitions() []Transition {
 	}
 }
 
+func (s StateType) target() []StateType {
+	return []StateType{
+		s,
+	}
+}
+
+func (s StateType) String() string {
+	return string(s)
+}
+
 // NoneState describes a transition to a state itself.
 // As the zero value of a string is an empty string, it allows us to let the Target field
 // blank.
 const NoneState StateType = ""
+
+type CompoundTarget map[StateType]Targeter
+
+func (c CompoundTarget) transitions() []Transition {
+	return []Transition{
+		{
+			Target: c,
+		},
+	}
+}
+
+func (c CompoundTarget) target() []StateType {
+	states := make([]StateType, 0)
+
+	parentStateIndex := 0
+	for parentState, nodes := range c {
+		// Currently we only want to handle transitions to a single branch of states.
+		if parentStateIndex > 0 {
+			break
+		}
+
+		states = append(states, parentState)
+		states = append(states, nodes.target()...)
+
+		parentStateIndex++
+	}
+
+	return removeDuplicatesFromStateTypeSlice(states)
+}
+
+func (c CompoundTarget) String() string {
+	targets := c.target()
+	targetsAsString := make([]string, 0, len(targets))
+
+	for _, target := range targets {
+		targetsAsString = append(targetsAsString, target.String())
+	}
+
+	return strings.Join(targetsAsString, ".")
+}
+
+type Targeter interface {
+	target() []StateType
+	String() string
+}
 
 // EventType is the base of an event.
 // EventType implements the Event interface, so that we can send an EventType to a state machine.
@@ -117,6 +182,8 @@ type EventType string
 func (e EventType) eventType() EventType {
 	return e
 }
+
+const InitialTransitionEventType EventType = "_INITIAL_TRANSITION"
 
 // Context holds data passed to actions and guards functions.
 // It can contain what user wants.
@@ -198,7 +265,7 @@ type Cond func(Context, Event) bool
 // as currently there is no built-in assign action in brainy.
 type Transition struct {
 	Cond    Cond
-	Target  StateType
+	Target  Targeter
 	Actions Actions
 }
 
@@ -210,6 +277,21 @@ func (t Transition) transitions() []Transition {
 // We can use as values a single Transition as well as a Transitions slice.
 type Events map[EventType]Transitioner
 
+// JoinStatesIDs takes an unlimited number of state types and returns
+// them as a concatenated string, each of them separed by a "." character.
+func JoinStatesIDs(statesIDs ...StateType) string {
+	concatenatedIDs := ""
+
+	for index, id := range statesIDs {
+		concatenatedIDs += id.String()
+		if index < len(statesIDs)-1 {
+			concatenatedIDs += "."
+		}
+	}
+
+	return concatenatedIDs
+}
+
 // A StateNode is a node of the state machine.
 // It has a map of Events to listen to, OnEntry actions to run when the state is entered and
 // OnExit actions to run when the state is exited.
@@ -218,35 +300,177 @@ type Events map[EventType]Transitioner
 // When no events are specified, the state node is of *final* type, which means once reached, the state
 // machine can not be transitioned anymore.
 type StateNode struct {
-	OnEntry Actions
-	OnExit  Actions
+	id string
 
-	On Events
-}
-
-// A StateNodes holds all state nodes of a machine.
-type StateNodes map[StateType]StateNode
-
-// A Machine is a simple finite state machine.
-//
-// The long-term objective of this library is to have a Golang implementation of state charts as defined by the SCXML specification.
-type Machine struct {
 	Context Context
 
 	Initial StateType
 
-	previous StateType
-	current  StateType
+	States StateNodes
 
-	StateNodes StateNodes
+	OnEntry Actions
+	OnExit  Actions
 
-	validationErr error
-	lock          sync.Mutex
+	On Events
+
+	parentStateNode *StateNode
+	machineID       StateType
 }
 
-// Validate ensures all transitions targets are valid states.
-func (machine *Machine) validate() error {
-	for _, stateNode := range machine.StateNodes {
+func (s *StateNode) Value() string {
+	return s.id
+}
+
+// Matches returns whether or not the state node is a descendant of the parent state value.
+// It takes the parent state value as a variadic list of StateType.
+//
+// Given that the id of the StateNode is `compound.atomic`:
+//  state.Matches(CompoundState)
+//  // => true
+//
+//  state.Matches(CompoundState, AtomicState)
+//  // => true
+//
+//  state.Matches(UnknownState)
+//  // => false
+func (s *StateNode) Matches(stateSelectors ...StateType) bool {
+	selectorsWithMachineID := make([]StateType, 0, len(stateSelectors)+1)
+	selectorsWithMachineID = append(selectorsWithMachineID, s.machineID)
+	for _, stateSelector := range stateSelectors {
+		selectorsWithMachineID = append(selectorsWithMachineID, stateSelector)
+	}
+
+	rebuiltStateID := JoinStatesIDs(selectorsWithMachineID...)
+
+	doesMatch := strings.HasPrefix(s.id, rebuiltStateID)
+	return doesMatch
+}
+
+func (s *StateNode) setChildrenStateNodesIDs(parentStateNodeID string, machineID StateType) {
+	for childStateNodeName, childStateNode := range s.States {
+		childStateNode.id = parentStateNodeID + "." + childStateNodeName.String()
+		childStateNode.machineID = machineID
+
+		if childStateNode.isCompound() {
+			childStateNode.setChildrenStateNodesIDs(childStateNode.id, machineID)
+		}
+	}
+}
+
+func (s StateNode) isAtomic() bool {
+	return s.States == nil || len(s.States) == 0
+}
+
+func (s StateNode) isCompound() bool {
+	return !s.isAtomic()
+}
+
+func (s *StateNode) resolveMostNestedInitialStateNode() *StateNode {
+	if !s.isCompound() {
+		return s
+	}
+
+	initialStateNode := s.States[s.Initial]
+	return initialStateNode.resolveMostNestedInitialStateNode()
+}
+
+func (s *StateNode) getTarget(t Targeter) (*StateNode, bool) {
+	targetID := t.String()
+
+	for _, childStateNode := range s.States {
+		if stateNodeIDEndsWithTargetID := strings.HasSuffix(childStateNode.id, targetID); stateNodeIDEndsWithTargetID {
+			return childStateNode.resolveMostNestedInitialStateNode(), true
+		}
+
+		if matchingChildStateNode, ok := childStateNode.getTarget(t); ok {
+			return matchingChildStateNode.resolveMostNestedInitialStateNode(), true
+		}
+	}
+
+	return nil, false
+}
+
+func (s *StateNode) executeOnEntryActions(c Context, e Event) error {
+	actionsToCall := make([]Action, 0)
+
+	stateNodeToEntry := s
+
+	for stateNodeToEntry != nil {
+		if onEntryActions := stateNodeToEntry.OnEntry; onEntryActions != nil {
+			actionsToCall = append(actionsToCall, onEntryActions...)
+		}
+
+		stateNodeToEntry = stateNodeToEntry.parentStateNode
+	}
+
+	countOfActions := len(actionsToCall)
+	actionsToCallInReverseOrder := make([]Action, countOfActions)
+
+	for index, action := range actionsToCall {
+		actionsToCallInReverseOrder[countOfActions-index-1] = action
+	}
+
+	for index, action := range actionsToCallInReverseOrder {
+		if err := action(c, e); err != nil {
+			return &ErrAction{
+				Type: onEntryActionType,
+				ID:   index,
+				Err:  err,
+			}
+		}
+	}
+
+	return nil
+}
+
+func (s *StateNode) executeOnExitActions(c Context, e Event) error {
+	stateNodeToExit := s
+
+	for stateNodeToExit != nil {
+		if onExitActions := stateNodeToExit.OnExit; onExitActions != nil {
+			for index, action := range onExitActions {
+				if err := action(c, e); err != nil {
+					return &ErrAction{
+						Type: onExitActionType,
+						ID:   index,
+						Err:  err,
+					}
+				}
+			}
+		}
+
+		stateNodeToExit = stateNodeToExit.parentStateNode
+	}
+
+	return nil
+}
+
+func (s *StateNode) validate(m *Machine) error {
+	if s.isAtomic() {
+		return nil
+	}
+
+	if s.Initial == NoneState {
+		return ErrBlankInitialStateForCompoundState
+	}
+
+	if _, ok := s.States[s.Initial]; !ok {
+		return &ErrInvalidInitialState{
+			InvalidInitialState: s.Initial,
+		}
+	}
+
+	for _, stateNode := range s.States {
+		// Set the parentStateNode of each state node
+		stateNode.parentStateNode = s
+
+		// Recursively validate children states
+		if stateNode.isCompound() {
+			if err := stateNode.validate(m); err != nil {
+				return err
+			}
+		}
+
 		handlers := stateNode.On
 		if handlers == nil {
 			continue
@@ -261,34 +485,91 @@ func (machine *Machine) validate() error {
 					continue
 				}
 
-				if _, ok := machine.StateNodes[target]; !ok {
+				if _, hasTarget := s.getTarget(target); !hasTarget {
 					return ErrInvalidTransitionNotImplemented
 				}
 			}
 		}
+
 	}
 
 	return nil
 }
 
+// A StateNodes holds all state nodes of a machine.
+type StateNodes map[StateType]*StateNode
+
+// NewMachine takes a StateNode configuration and returns a Machine if one could be created from the given configuration.
+// The configuration is validated so that impossible transitions are not possible at runtime.
+// If the state machine could not be created, the validation error is returned.
+func NewMachine(config StateNode) (*Machine, error) {
+	machine := &Machine{
+		StateNode: &config,
+	}
+	if err := machine.init(); err != nil {
+		return nil, err
+	}
+
+	return machine, nil
+}
+
+// A Machine is a simple finite state machine.
+// State machines should be instanciated through NewMachine function, that will validate state nodes configuration.
+//
+// The long-term objective of this library is to have a Golang implementation of state charts as defined by the SCXML specification.
+type Machine struct {
+	ID string
+
+	StateNode *StateNode
+
+	previous *StateNode
+	current  *StateNode
+
+	lock sync.Mutex
+}
+
+func (machine *Machine) setStateNodesIDs() {
+	var rootID StateType = StateType(machine.ID)
+	if rootID == "" {
+		rootID = "(machine)"
+	}
+
+	machine.StateNode.id = string(rootID)
+	machine.StateNode.machineID = rootID
+
+	for stateNodeName, stateNode := range machine.StateNode.States {
+		stateNode.id = machine.StateNode.id + "." + stateNodeName.String()
+		stateNode.machineID = rootID
+
+		stateNode.setChildrenStateNodesIDs(stateNode.id, rootID)
+	}
+}
+
+// Validate ensures all transitions targets are valid states.
+func (machine *Machine) validate() error {
+	machine.setStateNodesIDs()
+
+	err := machine.StateNode.validate(machine)
+
+	return err
+}
+
 // Init initializes the machine and validates transitions target state.
-func (machine *Machine) Init() error {
+func (machine *Machine) init() error {
 	if err := machine.validate(); err != nil {
-		machine.validationErr = err
 		return err
 	}
 
-	machine.current = machine.Initial
+	machine.current = machine.StateNode.resolveMostNestedInitialStateNode()
+	if err := machine.current.executeOnEntryActions(machine.current.Context, InitialTransitionEventType); err != nil {
+		return err
+	}
 
 	return nil
 }
 
 // Previous returns previous state.
-func (machine *Machine) Previous() StateType {
-	if err := machine.validationErr; err != nil {
-		return NoneState
-	}
-
+func (machine *Machine) Previous() *StateNode {
 	machine.lock.Lock()
 	defer machine.lock.Unlock()
 
@@ -296,11 +577,7 @@ func (machine *Machine) Previous() StateType {
 }
 
 // Current returns current state.
-func (machine *Machine) Current() StateType {
-	if err := machine.validationErr; err != nil {
-		return NoneState
-	}
-
+func (machine *Machine) Current() *StateNode {
 	machine.lock.Lock()
 	defer machine.lock.Unlock()
 
@@ -308,100 +585,69 @@ func (machine *Machine) Current() StateType {
 }
 
 // UnsafeCurrent returns current state without taking care of active lock.
-func (machine *Machine) UnsafeCurrent() StateType {
-	if err := machine.validationErr; err != nil {
-		return NoneState
-	}
-
+func (machine *Machine) UnsafeCurrent() *StateNode {
 	return machine.current
-}
-
-func (machine *Machine) getTransitions(event EventType) ([]Transition, error) {
-	currentState, ok := machine.StateNodes[machine.current]
-	if !ok {
-		return nil, &ErrInvalidTransition{
-			Err: ErrInvalidTransitionInvalidCurrentState,
-		}
-	}
-
-	if currentState.On == nil {
-		return nil, &ErrInvalidTransition{
-			Err: ErrInvalidTransitionFinalState,
-		}
-	}
-
-	transitions, ok := currentState.On[event]
-	if !ok {
-		return nil, &ErrInvalidTransition{
-			Err: ErrInvalidTransitionNotImplemented,
-		}
-	}
-
-	return transitions.transitions(), nil
 }
 
 // Send an event to the state machine.
 // Returns the new state and an error if one occured, or nil.
-func (machine *Machine) Send(event Event) (StateType, error) {
-	if err := machine.validationErr; err != nil {
-		return NoneState, err
-	}
-
+func (machine *Machine) Send(event Event) (*StateNode, error) {
 	machine.lock.Lock()
 	defer machine.lock.Unlock()
 
 	eventType := event.eventType()
 
-	transitions, err := machine.getTransitions(eventType)
-	if err != nil {
-		return machine.current, &ErrTransition{
-			Event: eventType,
-			Err:   err,
-		}
-	}
+	stateNode := machine.current
 
-	for _, transition := range transitions {
-		shouldCommitTransition := true
-		if cond := transition.Cond; cond != nil {
-			shouldCommitTransition = cond(machine.Context, event)
-		}
-
-		if !shouldCommitTransition {
+	for stateNode != nil {
+		handlers := stateNode.On
+		if handlers == nil {
+			stateNode = stateNode.parentStateNode
 			continue
 		}
 
-		currentStateNode := machine.StateNodes[machine.current]
-		if onExitActions := currentStateNode.OnExit; onExitActions != nil {
-			for index, action := range onExitActions {
-				if err := action(machine.Context, event); err != nil {
-					return machine.current, &ErrAction{
-						Type: onExitActionType,
-						ID:   index,
-						Err:  err,
-					}
-				}
-			}
+		eventHandler := handlers[eventType]
+		if eventHandler == nil {
+			stateNode = stateNode.parentStateNode
+			continue
 		}
+		transitions := eventHandler.transitions()
 
-		if actions := transition.Actions; actions != nil {
-			for index, action := range actions {
-				if err := action(machine.Context, event); err != nil {
-					return machine.current, &ErrAction{
-						Type: transitionActionActionType,
-						ID:   index,
-						Err:  err,
-					}
-				}
+		for _, transition := range transitions {
+			shouldCommitTransition := true
+			if cond := transition.Cond; cond != nil {
+				shouldCommitTransition = cond(machine.StateNode.Context, event)
 			}
-		}
 
-		if target := transition.Target; target != NoneState {
-			nextStateNode := machine.StateNodes[target]
-			if onEntryActions := nextStateNode.OnEntry; onEntryActions != nil {
-				for index, action := range onEntryActions {
-					if err := action(machine.Context, event); err != nil {
+			if !shouldCommitTransition {
+				continue
+			}
+
+			stateNodeToEnter := machine.current
+			if target := transition.Target; target != NoneState {
+				// Get parent node to be able to target sibbling state nodes.
+				parentStateNode := stateNode.parentStateNode
+				if parentStateNode == nil {
+					return machine.current, errors.New("parent state node is nil")
+				}
+
+				resolvedTargetStateNode, ok := parentStateNode.getTarget(target)
+				if !ok {
+					return machine.current, errors.New("could not resolve target")
+				}
+
+				stateNodeToEnter = resolvedTargetStateNode
+			}
+
+			if err := machine.current.executeOnExitActions(machine.StateNode.Context, event); err != nil {
+				return machine.current, err
+			}
+
+			if actions := transition.Actions; actions != nil {
+				for index, action := range actions {
+					if err := action(machine.StateNode.Context, event); err != nil {
 						return machine.current, &ErrAction{
-							Type: onEntryActionType,
+							Type: transitionActionActionType,
 							ID:   index,
 							Err:  err,
 						}
@@ -409,12 +655,36 @@ func (machine *Machine) Send(event Event) (StateType, error) {
 				}
 			}
 
+			if err := stateNodeToEnter.executeOnEntryActions(machine.StateNode.Context, event); err != nil {
+				return machine.current, err
+			}
+
 			machine.previous = machine.current
-			machine.current = target
+			machine.current = stateNodeToEnter
+
+			return machine.current, nil
 		}
 
-		break
+		stateNode = stateNode.parentStateNode
 	}
 
-	return machine.current, nil
+	return machine.current, ErrInvalidTransitionNotImplemented
+}
+
+func removeDuplicatesFromStateTypeSlice(s []StateType) []StateType {
+	encounteredKeys := make(map[StateType]bool)
+	uniqueValues := make([]StateType, 0, len(s))
+
+	for _, value := range s {
+		_, ok := encounteredKeys[value]
+		if ok == true {
+			continue
+		}
+
+		uniqueValues = append(uniqueValues, value)
+
+		encounteredKeys[value] = true
+	}
+
+	return uniqueValues
 }
