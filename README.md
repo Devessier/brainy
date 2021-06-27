@@ -84,16 +84,20 @@ func main() {
 
 	currentState := lightSwitchStateMachine.Current()
 	fmt.Printf("The current state of the state machine is: %s\n", currentState.Value()) // (machine).off
+	fmt.Printf("The light switch is off: %v\n", currentState.Matches(OffState))         // true
 
 	lightSwitchStateMachine.Send(ToggleEvent)
 
 	stateAfterFirstToggle := lightSwitchStateMachine.Current()
 	fmt.Printf("The state of the state machine after the first toogle is: %s\n", stateAfterFirstToggle.Value()) // (machine).on
+	fmt.Printf("The light switch is on: %v\n", stateAfterFirstToggle.Matches(OnState))                          // true
 
 	lightSwitchStateMachine.Send(ToggleEvent)
 
 	stateAfterSecondToggle := lightSwitchStateMachine.Current()
 	fmt.Printf("The state of the state machine after the second toogle is: %s\n", stateAfterSecondToggle.Value()) // (machine).off
+	fmt.Printf("Is the light switch on? %v\n", stateAfterSecondToggle.Matches(OnState))                           // false
+
 }
 
 ```
