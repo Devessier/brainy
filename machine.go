@@ -459,8 +459,7 @@ func (s *StateNode) validate(m *Machine) error {
 				}
 
 				if _, hasTarget := s.getTarget(target); !hasTarget {
-					// TODO: improve error
-					return errors.New("Invalid transition")
+					return ErrInvalidTransitionNotImplemented
 				}
 			}
 		}

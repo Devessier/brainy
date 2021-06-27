@@ -492,30 +492,30 @@ func TestFailingEntryActionAbortsTransition(t *testing.T) {
 	failingOnEntryTransition.AssertExpectations(t)
 }
 
-// func TestPreemptivelyValidatesTransitions(t *testing.T) {
-// 	assert := assert.New(t)
+func TestPreemptivelyValidatesTransitions(t *testing.T) {
+	assert := assert.New(t)
 
-// 	invalidStateMachine, err := brainy.NewMachine(brainy.StateNode{
-// 		Initial: OffState,
+	invalidStateMachine, err := brainy.NewMachine(brainy.StateNode{
+		Initial: OffState,
 
-// 		States: brainy.StateNodes{
-// 			OnState: brainy.StateNode{
-// 				On: brainy.Events{
-// 					OffEvent: IncrementState,
-// 				},
-// 			},
+		States: brainy.StateNodes{
+			OnState: &brainy.StateNode{
+				On: brainy.Events{
+					OffEvent: IncrementState,
+				},
+			},
 
-// 			OffState: brainy.StateNode{
-// 				On: brainy.Events{
-// 					OnEvent: OnState,
-// 				},
-// 			},
-// 		},
-// 	})
-// 	assert.Nil(invalidStateMachine)
-// 	assert.Error(err)
-// 	assert.ErrorIs(err, brainy.ErrInvalidTransitionNotImplemented)
-// }
+			OffState: &brainy.StateNode{
+				On: brainy.Events{
+					OnEvent: OnState,
+				},
+			},
+		},
+	})
+	assert.Nil(invalidStateMachine)
+	assert.Error(err)
+	assert.ErrorIs(err, brainy.ErrInvalidTransitionNotImplemented)
+}
 
 func TestCompoundStates(t *testing.T) {
 	assert := assert.New(t)
@@ -593,6 +593,4 @@ func TestCompoundStates(t *testing.T) {
 	nextState, err := compoundStateMachine.Send(ExitCompoundState)
 	assert.NoError(err)
 	assert.Contains(nextState.Value(), brainy.JoinStatesIDs(AtomicState))
-
-	// assert.ErrorIs(err, brainy.ErrInvalidTransitionNotImplemented)
 }
