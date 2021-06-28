@@ -286,7 +286,6 @@ func TestStateMachineWithTransitionsWithoutTargets(t *testing.T) {
 							Cond: func(c brainy.Context, e brainy.Event) bool {
 								return true
 							},
-							Target: brainy.NoneState,
 							Actions: brainy.Actions{
 								func(c brainy.Context, e brainy.Event) error {
 									ctx := c.(*IncrementStateMachineContext)

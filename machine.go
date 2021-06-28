@@ -481,7 +481,7 @@ func (s *StateNode) validate(m *Machine) error {
 
 			for _, transition := range transitions {
 				target := transition.Target
-				if target == NoneState {
+				if target == nil || target == NoneState {
 					continue
 				}
 
@@ -624,7 +624,7 @@ func (machine *Machine) Send(event Event) (*StateNode, error) {
 			}
 
 			stateNodeToEnter := machine.current
-			if target := transition.Target; target != NoneState {
+			if target := transition.Target; target != nil && target != NoneState {
 				// Get parent node to be able to target sibbling state nodes.
 				parentStateNode := stateNode.parentStateNode
 				if parentStateNode == nil {
