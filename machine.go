@@ -674,35 +674,43 @@ func (machine *Machine) resolveStateNodeWithHandler(eventType EventType) (*State
 	return nil, nil
 }
 
+func (machine *Machine) handleExternalEvent(event Event) error {
+	eventType := event.eventType()
+	stateNodeWithHandler, eventHandler := machine.resolveStateNodeWithHandler(eventType)
+	if stateNodeWithHandler == nil {
+		return ErrInvalidTransitionNotImplemented
+	}
+
+	transitions := eventHandler.transitions()
+	transitionToExecute, ok := machine.selectTransition(transitions, event)
+	if !ok {
+		return ErrNoTransitionCouldBeRun
+	}
+
+	stateNodeToEnter, err := machine.resolveStateNodeToEnter(stateNodeWithHandler, transitionToExecute)
+	if err != nil {
+		return err
+	}
+
+	if err := machine.executeMicrotask(stateNodeToEnter, transitionToExecute, event); err != nil {
+		return err
+	}
+
+	machine.previous = machine.current
+	machine.current = stateNodeToEnter
+
+	return nil
+}
+
 // Send an event to the state machine.
 // Returns the new state and an error if one occured, or nil.
 func (machine *Machine) Send(event Event) (*StateNode, error) {
 	machine.lock.Lock()
 	defer machine.lock.Unlock()
 
-	eventType := event.eventType()
-	stateNodeWithHandler, eventHandler := machine.resolveStateNodeWithHandler(eventType)
-	if stateNodeWithHandler == nil {
-		return machine.current, ErrInvalidTransitionNotImplemented
-	}
-
-	transitions := eventHandler.transitions()
-	transitionToExecute, ok := machine.selectTransition(transitions, event)
-	if !ok {
-		return machine.current, ErrNoTransitionCouldBeRun
-	}
-
-	stateNodeToEnter, err := machine.resolveStateNodeToEnter(stateNodeWithHandler, transitionToExecute)
-	if err != nil {
+	if err := machine.handleExternalEvent(event); err != nil {
 		return machine.current, err
 	}
-
-	if err := machine.executeMicrotask(stateNodeToEnter, transitionToExecute, event); err != nil {
-		return machine.current, err
-	}
-
-	machine.previous = machine.current
-	machine.current = stateNodeToEnter
 
 	return machine.current, nil
 }
