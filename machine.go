@@ -340,9 +340,7 @@ func (s *StateNode) Value() string {
 func (s *StateNode) Matches(stateSelectors ...StateType) bool {
 	selectorsWithMachineID := make([]StateType, 0, len(stateSelectors)+1)
 	selectorsWithMachineID = append(selectorsWithMachineID, s.machineID)
-	for _, stateSelector := range stateSelectors {
-		selectorsWithMachineID = append(selectorsWithMachineID, stateSelector)
-	}
+	selectorsWithMachineID = append(selectorsWithMachineID, stateSelectors...)
 
 	rebuiltStateID := JoinStatesIDs(selectorsWithMachineID...)
 
@@ -508,7 +506,8 @@ type StateNodes map[StateType]*StateNode
 // If the state machine could not be created, the validation error is returned.
 func NewMachine(config StateNode) (*Machine, error) {
 	machine := &Machine{
-		StateNode: &config,
+		StateNode:      &config,
+		externalEvents: NewEventsQueue(),
 	}
 	if err := machine.init(); err != nil {
 		return nil, err
@@ -525,6 +524,8 @@ type Machine struct {
 	ID string
 
 	StateNode *StateNode
+
+	externalEvents *EventsQueue
 
 	previous *StateNode
 	current  *StateNode
@@ -708,8 +709,17 @@ func (machine *Machine) Send(event Event) (*StateNode, error) {
 	machine.lock.Lock()
 	defer machine.lock.Unlock()
 
-	if err := machine.handleExternalEvent(event); err != nil {
-		return machine.current, err
+	machine.externalEvents.Add(event)
+
+	for {
+		externalEvent, ok := machine.externalEvents.Poll()
+		if !ok {
+			break
+		}
+
+		if err := machine.handleExternalEvent(externalEvent); err != nil {
+			return machine.current, err
+		}
 	}
 
 	return machine.current, nil
