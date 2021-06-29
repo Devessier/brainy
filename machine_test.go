@@ -153,7 +153,7 @@ func TestCondTakesAGuardFunction(t *testing.T) {
 
 	_, err = onOffMachine.Send(OnEvent)
 	assert.Error(err)
-	assert.ErrorIs(err, brainy.ErrInvalidTransitionNotImplemented)
+	assert.ErrorIs(err, brainy.ErrNoTransitionCouldBeRun)
 
 	assert.True(onOffMachine.Current().Matches(OffState))
 }
