@@ -678,3 +678,17 @@ func TestCanSendEventsWithSendAction(t *testing.T) {
 	assert.True(nextState.Matches(AtomicState))
 	assert.True(compoundStateMachine.Current().Matches(AtomicState))
 }
+
+func TestCanDisableLocking(t *testing.T) {
+	assert := assert.New(t)
+
+	compoundStateMachine, err := brainy.NewMachine(brainy.StateNode{
+		Initial: OnState,
+
+		States: brainy.StateNodes{
+			OnState: &brainy.StateNode{},
+		},
+	}, brainy.WithDisableLocking())
+	assert.NotNil(compoundStateMachine)
+	assert.NoError(err)
+}

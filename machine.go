@@ -542,16 +542,30 @@ func (s *StateNode) validate(m *Machine) error {
 // A StateNodes holds all state nodes of a machine.
 type StateNodes map[StateType]*StateNode
 
+type MachineOption func(*Machine)
+
+// WithDisableLocking disables mutex usage.
+// It is NOT RECOMMENDED in most cases.
+func WithDisableLocking() MachineOption {
+	return func(machine *Machine) {
+		machine.disableLocking = true
+	}
+}
+
 // NewMachine takes a StateNode configuration and returns a Machine if one could be created from the given configuration.
 // The configuration is validated so that impossible transitions are not possible at runtime.
 // If the state machine could not be created, the validation error is returned.
-func NewMachine(config StateNode) (*Machine, error) {
+func NewMachine(config StateNode, options ...MachineOption) (*Machine, error) {
 	machine := &Machine{
 		StateNode:      &config,
 		externalEvents: NewEventsQueue(),
 	}
 	if err := machine.init(); err != nil {
 		return nil, err
+	}
+
+	for _, option := range options {
+		option(machine)
 	}
 
 	return machine, nil
@@ -571,7 +585,8 @@ type Machine struct {
 	previous *StateNode
 	current  *StateNode
 
-	lock sync.Mutex
+	disableLocking bool
+	lock           sync.Mutex
 }
 
 func (machine *Machine) setStateNodesIDs() {
@@ -612,16 +627,20 @@ func (machine *Machine) init() error {
 
 // Previous returns previous state.
 func (machine *Machine) Previous() *StateNode {
-	machine.lock.Lock()
-	defer machine.lock.Unlock()
+	if !machine.disableLocking {
+		machine.lock.Lock()
+		defer machine.lock.Unlock()
+	}
 
 	return machine.previous
 }
 
 // Current returns current state.
 func (machine *Machine) Current() *StateNode {
-	machine.lock.Lock()
-	defer machine.lock.Unlock()
+	if !machine.disableLocking {
+		machine.lock.Lock()
+		defer machine.lock.Unlock()
+	}
 
 	return machine.current
 }
@@ -743,8 +762,10 @@ func (machine *Machine) handleExternalEvent(event Event) error {
 // Send an event to the state machine.
 // Returns the new state and an error if one occured, or nil.
 func (machine *Machine) Send(event Event) (*StateNode, error) {
-	machine.lock.Lock()
-	defer machine.lock.Unlock()
+	if !machine.disableLocking {
+		machine.lock.Lock()
+		defer machine.lock.Unlock()
+	}
 
 	machine.externalEvents.Add(event)
 
