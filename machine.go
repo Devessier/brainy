@@ -35,6 +35,10 @@ var (
 	//
 	// Transitions validity is checked when .Init() method is called.
 	ErrInvalidTransitionNotImplemented = errors.New("transition not implemented")
+	// ErrNoTransitionCouldBeRun is returned when an event could be handled, that is, a state had an handler for this event,
+	// but all transition guards returned false.
+	// This is usually not an issue.
+	ErrNoTransitionCouldBeRun = errors.New("no transition could be run, due to all guards having returned false")
 )
 
 type ErrInvalidInitialState struct {
@@ -589,14 +593,66 @@ func (machine *Machine) UnsafeCurrent() *StateNode {
 	return machine.current
 }
 
-// Send an event to the state machine.
-// Returns the new state and an error if one occured, or nil.
-func (machine *Machine) Send(event Event) (*StateNode, error) {
-	machine.lock.Lock()
-	defer machine.lock.Unlock()
+func (machine *Machine) selectTransition(transitions []Transition, event Event) (Transition, bool) {
+	for _, transition := range transitions {
+		shouldCommitTransition := true
+		if cond := transition.Cond; cond != nil {
+			shouldCommitTransition = cond(machine.StateNode.Context, event)
+		}
 
-	eventType := event.eventType()
+		if shouldCommitTransition {
+			return transition, true
+		}
+	}
 
+	return Transition{}, false
+}
+
+func (machine *Machine) resolveStateNodeToEnter(stateNodeWithHandler *StateNode, transitionToExecute Transition) (*StateNode, error) {
+	stateNodeToEnter := stateNodeWithHandler
+	if target := transitionToExecute.Target; target != nil && target != NoneState {
+		// Get parent node to be able to target sibbling state nodes.
+		parentStateNode := stateNodeWithHandler.parentStateNode
+		if parentStateNode == nil {
+			return nil, errors.New("parent state node is nil")
+		}
+
+		resolvedTargetStateNode, ok := parentStateNode.getTarget(target)
+		if !ok {
+			return nil, errors.New("could not resolve target")
+		}
+
+		stateNodeToEnter = resolvedTargetStateNode
+	}
+
+	return stateNodeToEnter, nil
+}
+
+func (machine *Machine) executeMicrotask(stateNodeToEnter *StateNode, transitionToExecute Transition, event Event) error {
+	if err := machine.current.executeOnExitActions(machine.StateNode.Context, event); err != nil {
+		return err
+	}
+
+	if actions := transitionToExecute.Actions; actions != nil {
+		for index, action := range actions {
+			if err := action(machine.StateNode.Context, event); err != nil {
+				return &ErrAction{
+					Type: transitionActionActionType,
+					ID:   index,
+					Err:  err,
+				}
+			}
+		}
+	}
+
+	if err := stateNodeToEnter.executeOnEntryActions(machine.StateNode.Context, event); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (machine *Machine) resolveStateNodeWithHandler(eventType EventType) (*StateNode, Transitioner) {
 	stateNode := machine.current
 
 	for stateNode != nil {
@@ -611,64 +667,44 @@ func (machine *Machine) Send(event Event) (*StateNode, error) {
 			stateNode = stateNode.parentStateNode
 			continue
 		}
-		transitions := eventHandler.transitions()
 
-		for _, transition := range transitions {
-			shouldCommitTransition := true
-			if cond := transition.Cond; cond != nil {
-				shouldCommitTransition = cond(machine.StateNode.Context, event)
-			}
-
-			if !shouldCommitTransition {
-				continue
-			}
-
-			stateNodeToEnter := machine.current
-			if target := transition.Target; target != nil && target != NoneState {
-				// Get parent node to be able to target sibbling state nodes.
-				parentStateNode := stateNode.parentStateNode
-				if parentStateNode == nil {
-					return machine.current, errors.New("parent state node is nil")
-				}
-
-				resolvedTargetStateNode, ok := parentStateNode.getTarget(target)
-				if !ok {
-					return machine.current, errors.New("could not resolve target")
-				}
-
-				stateNodeToEnter = resolvedTargetStateNode
-			}
-
-			if err := machine.current.executeOnExitActions(machine.StateNode.Context, event); err != nil {
-				return machine.current, err
-			}
-
-			if actions := transition.Actions; actions != nil {
-				for index, action := range actions {
-					if err := action(machine.StateNode.Context, event); err != nil {
-						return machine.current, &ErrAction{
-							Type: transitionActionActionType,
-							ID:   index,
-							Err:  err,
-						}
-					}
-				}
-			}
-
-			if err := stateNodeToEnter.executeOnEntryActions(machine.StateNode.Context, event); err != nil {
-				return machine.current, err
-			}
-
-			machine.previous = machine.current
-			machine.current = stateNodeToEnter
-
-			return machine.current, nil
-		}
-
-		stateNode = stateNode.parentStateNode
+		return stateNode, eventHandler
 	}
 
-	return machine.current, ErrInvalidTransitionNotImplemented
+	return nil, nil
+}
+
+// Send an event to the state machine.
+// Returns the new state and an error if one occured, or nil.
+func (machine *Machine) Send(event Event) (*StateNode, error) {
+	machine.lock.Lock()
+	defer machine.lock.Unlock()
+
+	eventType := event.eventType()
+	stateNodeWithHandler, eventHandler := machine.resolveStateNodeWithHandler(eventType)
+	if stateNodeWithHandler == nil {
+		return machine.current, ErrInvalidTransitionNotImplemented
+	}
+
+	transitions := eventHandler.transitions()
+	transitionToExecute, ok := machine.selectTransition(transitions, event)
+	if !ok {
+		return machine.current, ErrNoTransitionCouldBeRun
+	}
+
+	stateNodeToEnter, err := machine.resolveStateNodeToEnter(stateNodeWithHandler, transitionToExecute)
+	if err != nil {
+		return machine.current, err
+	}
+
+	if err := machine.executeMicrotask(stateNodeToEnter, transitionToExecute, event); err != nil {
+		return machine.current, err
+	}
+
+	machine.previous = machine.current
+	machine.current = stateNodeToEnter
+
+	return machine.current, nil
 }
 
 func removeDuplicatesFromStateTypeSlice(s []StateType) []StateType {
@@ -677,7 +713,7 @@ func removeDuplicatesFromStateTypeSlice(s []StateType) []StateType {
 
 	for _, value := range s {
 		_, ok := encounteredKeys[value]
-		if ok == true {
+		if ok {
 			continue
 		}
 
