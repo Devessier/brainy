@@ -21,22 +21,26 @@ func main() {
 		States: brainy.StateNodes{
 			OnState: &brainy.StateNode{
 				OnEntry: brainy.Actions{
-					func(c brainy.Context, e brainy.Event) error {
-						fmt.Println("Reached `on` state")
+					brainy.ActionFn(
+						func(c brainy.Context, e brainy.Event) error {
+							fmt.Println("Reached `on` state")
 
-						return nil
-					},
+							return nil
+						},
+					),
 				},
 
 				On: brainy.Events{
 					ToggleEvent: brainy.Transition{
 						Target: OffState,
 						Actions: brainy.Actions{
-							func(c brainy.Context, e brainy.Event) error {
-								fmt.Println("Go to `off` state")
+							brainy.ActionFn(
+								func(c brainy.Context, e brainy.Event) error {
+									fmt.Println("Go to `off` state")
 
-								return nil
-							},
+									return nil
+								},
+							),
 						},
 					},
 				},
@@ -44,22 +48,26 @@ func main() {
 
 			OffState: &brainy.StateNode{
 				OnEntry: brainy.Actions{
-					func(c brainy.Context, e brainy.Event) error {
-						fmt.Println("Reached `off` state")
+					brainy.ActionFn(
+						func(c brainy.Context, e brainy.Event) error {
+							fmt.Println("Reached `off` state")
 
-						return nil
-					},
+							return nil
+						},
+					),
 				},
 
 				On: brainy.Events{
 					ToggleEvent: brainy.Transition{
 						Target: OnState,
 						Actions: brainy.Actions{
-							func(c brainy.Context, e brainy.Event) error {
-								fmt.Println("Go to `on` state")
+							brainy.ActionFn(
+								func(c brainy.Context, e brainy.Event) error {
+									fmt.Println("Go to `on` state")
 
-								return nil
-							},
+									return nil
+								},
+							),
 						},
 					},
 				},

@@ -181,9 +181,9 @@ func TestAllActionsOfATransitionAreCalled(t *testing.T) {
 					OffEvent: brainy.Transition{
 						Target: OffState,
 						Actions: brainy.Actions{
-							firstTransitionAction.Execute,
-							secondTransitionAction.Execute,
-							thirdTransitionAction.Execute,
+							brainy.ActionFn(firstTransitionAction.Execute),
+							brainy.ActionFn(secondTransitionAction.Execute),
+							brainy.ActionFn(thirdTransitionAction.Execute),
 						},
 					},
 				},
@@ -234,9 +234,9 @@ func TestAFailingActionShortCircuitsTransition(t *testing.T) {
 					OffEvent: brainy.Transition{
 						Target: OffState,
 						Actions: brainy.Actions{
-							firstTransitionAction.Execute,
-							secondTransitionAction.Execute,
-							thirdTransitionAction.Execute,
+							brainy.ActionFn(firstTransitionAction.Execute),
+							brainy.ActionFn(secondTransitionAction.Execute),
+							brainy.ActionFn(thirdTransitionAction.Execute),
 						},
 					},
 				},
@@ -287,18 +287,20 @@ func TestStateMachineWithTransitionsWithoutTargets(t *testing.T) {
 								return true
 							},
 							Actions: brainy.Actions{
-								func(c brainy.Context, e brainy.Event) error {
-									ctx := c.(*IncrementStateMachineContext)
+								brainy.ActionFn(
+									func(c brainy.Context, e brainy.Event) error {
+										ctx := c.(*IncrementStateMachineContext)
 
-									switch ev := e.(type) {
-									case IncrementEvent:
-										ctx.ToIncrement += ev.IncrementBy
-									default:
-										ctx.ToIncrement += 1
-									}
+										switch ev := e.(type) {
+										case IncrementEvent:
+											ctx.ToIncrement += ev.IncrementBy
+										default:
+											ctx.ToIncrement += 1
+										}
 
-									return nil
-								},
+										return nil
+									},
+								),
 							},
 						},
 					},
@@ -411,20 +413,20 @@ func TestOnEntryThenActionsThenOnExitAreCalled(t *testing.T) {
 		States: brainy.StateNodes{
 			OnState: &brainy.StateNode{
 				OnEntry: brainy.Actions{
-					onEnterOnStateAction.Execute,
+					brainy.ActionFn(onEnterOnStateAction.Execute),
 				},
 			},
 
 			OffState: &brainy.StateNode{
 				OnExit: brainy.Actions{
-					onExitOffStateAction.Execute,
+					brainy.ActionFn(onExitOffStateAction.Execute),
 				},
 
 				On: brainy.Events{
 					OnEvent: brainy.Transition{
 						Target: OnState,
 						Actions: brainy.Actions{
-							transitionAction.Execute,
+							brainy.ActionFn(transitionAction.Execute),
 						},
 					},
 				},
@@ -466,7 +468,7 @@ func TestFailingEntryActionAbortsTransition(t *testing.T) {
 		States: brainy.StateNodes{
 			OnState: &brainy.StateNode{
 				OnEntry: brainy.Actions{
-					failingOnEntryTransition.Execute,
+					brainy.ActionFn(failingOnEntryTransition.Execute),
 				},
 			},
 
@@ -515,18 +517,20 @@ func TestPreemptivelyValidatesTransitions(t *testing.T) {
 	assert.ErrorIs(err, brainy.ErrInvalidTransitionNotImplemented)
 }
 
+const (
+	CompoundState brainy.StateType = "compound"
+	NestedAState  brainy.StateType = "nested-a"
+	NestedBState  brainy.StateType = "nested-b"
+	AtomicState   brainy.StateType = "atomic"
+
+	GoToNestedBStateEvent  brainy.EventType = "GO_TO_NESTED_B_STATE"
+	ExitCompoundStateEvent brainy.EventType = "EXIT_COMPOUND_STATE"
+)
+
 func TestCompoundStates(t *testing.T) {
 	assert := assert.New(t)
 
 	const (
-		CompoundState brainy.StateType = "compound"
-		NestedAState  brainy.StateType = "nested-a"
-		NestedBState  brainy.StateType = "nested-b"
-		AtomicState   brainy.StateType = "atomic"
-
-		GoToNestedBState  brainy.EventType = "GO_TO_NESTED_B_STATE"
-		ExitCompoundState brainy.EventType = "EXIT_COMPOUND_STATE"
-
 		CompoundStateOnEntry string = "CompoundStateOnEntry"
 		NestedAStateOnEntry  string = "CompoundStateOnEntry"
 		NestedBStateOnEntry  string = "CompoundStateOnEntry"
@@ -560,39 +564,39 @@ func TestCompoundStates(t *testing.T) {
 				Initial: NestedAState,
 
 				OnEntry: brainy.Actions{
-					compoundStateOnEntryAction.Execute,
+					brainy.ActionFn(compoundStateOnEntryAction.Execute),
 				},
 
 				States: brainy.StateNodes{
 					NestedAState: &brainy.StateNode{
 						OnEntry: brainy.Actions{
-							nestedAStateStateOnEntryAction.Execute,
+							brainy.ActionFn(nestedAStateStateOnEntryAction.Execute),
 						},
 
 						On: brainy.Events{
-							GoToNestedBState: NestedBState,
+							GoToNestedBStateEvent: NestedBState,
 						},
 					},
 
 					NestedBState: &brainy.StateNode{
 						OnEntry: brainy.Actions{
-							nestedBStateStateOnEntryAction.Execute,
+							brainy.ActionFn(nestedBStateStateOnEntryAction.Execute),
 						},
 					},
 				},
 
 				On: brainy.Events{
-					ExitCompoundState: AtomicState,
+					ExitCompoundStateEvent: AtomicState,
 				},
 			},
 
 			AtomicState: &brainy.StateNode{
 				OnEntry: brainy.Actions{
-					atomicStateOnEntryAction.Execute,
+					brainy.ActionFn(atomicStateOnEntryAction.Execute),
 				},
 
 				On: brainy.Events{
-					GoToNestedBState: brainy.CompoundTarget{
+					GoToNestedBStateEvent: brainy.CompoundTarget{
 						CompoundState: NestedBState,
 					},
 				},
@@ -607,11 +611,11 @@ func TestCompoundStates(t *testing.T) {
 	assert.True(compoundStateMachine.Current().Matches(CompoundState, NestedAState))
 	assert.True(compoundStateMachine.Current().Matches(CompoundState, NestedAState))
 
-	nextState, err := compoundStateMachine.Send(GoToNestedBState)
+	nextState, err := compoundStateMachine.Send(GoToNestedBStateEvent)
 	assert.NoError(err)
 	assert.True(nextState.Matches(CompoundState, NestedBState))
 
-	nextState, err = compoundStateMachine.Send(ExitCompoundState)
+	nextState, err = compoundStateMachine.Send(ExitCompoundStateEvent)
 	assert.NoError(err)
 	assert.True(nextState.Matches(AtomicState))
 
@@ -628,4 +632,49 @@ func TestCompoundStates(t *testing.T) {
 	nestedAStateStateOnEntryAction.AssertExpectations(t)
 	nestedBStateStateOnEntryAction.AssertExpectations(t)
 	atomicStateOnEntryAction.AssertExpectations(t)
+}
+
+func TestCanSendEventsWithSendAction(t *testing.T) {
+	assert := assert.New(t)
+
+	const (
+		SayHelloEvent brainy.EventType = "SAY_HELLO"
+	)
+
+	compoundStateMachine, err := brainy.NewMachine(brainy.StateNode{
+		Initial: CompoundState,
+
+		States: brainy.StateNodes{
+			CompoundState: &brainy.StateNode{
+				Initial: NestedAState,
+
+				States: brainy.StateNodes{
+					NestedAState: &brainy.StateNode{
+						On: brainy.Events{
+							SayHelloEvent: brainy.Transition{
+								Actions: brainy.Actions{
+									brainy.Send(ExitCompoundStateEvent),
+								},
+							},
+						},
+					},
+				},
+
+				On: brainy.Events{
+					ExitCompoundStateEvent: AtomicState,
+				},
+			},
+
+			AtomicState: &brainy.StateNode{},
+		},
+	})
+	assert.NotNil(compoundStateMachine)
+	assert.NoError(err)
+
+	assert.True(compoundStateMachine.Current().Matches(CompoundState, NestedAState))
+
+	nextState, err := compoundStateMachine.Send(SayHelloEvent)
+	assert.NoError(err)
+	assert.True(nextState.Matches(AtomicState))
+	assert.True(compoundStateMachine.Current().Matches(AtomicState))
 }

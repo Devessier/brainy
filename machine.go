@@ -195,10 +195,34 @@ type Context interface{}
 
 // An Action is performed when the machine is transitioning to the node where it's defined.
 // It takes machine context and returns an event to send to the machine itself, or NoopEvent.
+type Actioner interface {
+	run(Context, Event) error
+}
+
+// An Action is a function that takes the state machine context and the event that lead to
+// the action being run, and that returns an error.
 type Action func(Context, Event) error
 
+// actionFn is a wrapper around an Action function.
+// The wrapper is necessary in the current API to allow built-in actions, such as Send or Assign.
+type actionFn struct {
+	Fn Action
+}
+
+func (a actionFn) run(c Context, e Event) error {
+	return a.Fn(c, e)
+}
+
+// ActionFn returns an Actioner that will run the provided function
+// when the action will be executed.
+func ActionFn(fn Action) Actioner {
+	return actionFn{
+		Fn: fn,
+	}
+}
+
 // Actions is a slice of Action.
-type Actions []Action
+type Actions []Actioner
 
 // EventWithType is meant to be embedded in a struct to represent an event with a payload.
 // Because EventWithType implements the Event interface, if it is embedded within a struct, this struct
@@ -317,6 +341,7 @@ type StateNode struct {
 
 	On Events
 
+	machine         *Machine
 	parentStateNode *StateNode
 	machineID       StateType
 }
@@ -348,13 +373,14 @@ func (s *StateNode) Matches(stateSelectors ...StateType) bool {
 	return doesMatch
 }
 
-func (s *StateNode) setChildrenStateNodesIDs(parentStateNodeID string, machineID StateType) {
+func (s *StateNode) setChildrenStateNodesIDs(parentStateNodeID string, machineID StateType, machine *Machine) {
 	for childStateNodeName, childStateNode := range s.States {
 		childStateNode.id = parentStateNodeID + "." + childStateNodeName.String()
 		childStateNode.machineID = machineID
+		childStateNode.machine = machine
 
 		if childStateNode.isCompound() {
-			childStateNode.setChildrenStateNodesIDs(childStateNode.id, machineID)
+			childStateNode.setChildrenStateNodesIDs(childStateNode.id, machineID, machine)
 		}
 	}
 }
@@ -392,8 +418,23 @@ func (s *StateNode) getTarget(t Targeter) (*StateNode, bool) {
 	return nil, false
 }
 
+func executeActioner(actioner Actioner, machine *Machine, context Context, event Event) error {
+	switch action := actioner.(type) {
+	case actionFn:
+		if err := action.run(context, event); err != nil {
+			return err
+		}
+	case sendActionEvent:
+		machine.externalEvents.Add(action.SourceEvent)
+	default:
+		return errors.New("unexpected actioner")
+	}
+
+	return nil
+}
+
 func (s *StateNode) executeOnEntryActions(c Context, e Event) error {
-	actionsToCall := make([]Action, 0)
+	actionsToCall := make([]Actioner, 0)
 
 	stateNodeToEntry := s
 
@@ -406,14 +447,14 @@ func (s *StateNode) executeOnEntryActions(c Context, e Event) error {
 	}
 
 	countOfActions := len(actionsToCall)
-	actionsToCallInReverseOrder := make([]Action, countOfActions)
+	actionsToCallInReverseOrder := make([]Actioner, countOfActions)
 
 	for index, action := range actionsToCall {
 		actionsToCallInReverseOrder[countOfActions-index-1] = action
 	}
 
-	for index, action := range actionsToCallInReverseOrder {
-		if err := action(c, e); err != nil {
+	for index, actioner := range actionsToCallInReverseOrder {
+		if err := executeActioner(actioner, s.machine, c, e); err != nil {
 			return &ErrAction{
 				Type: onEntryActionType,
 				ID:   index,
@@ -430,8 +471,8 @@ func (s *StateNode) executeOnExitActions(c Context, e Event) error {
 
 	for stateNodeToExit != nil {
 		if onExitActions := stateNodeToExit.OnExit; onExitActions != nil {
-			for index, action := range onExitActions {
-				if err := action(c, e); err != nil {
+			for index, actioner := range onExitActions {
+				if err := executeActioner(actioner, s.machine, c, e); err != nil {
 					return &ErrAction{
 						Type: onExitActionType,
 						ID:   index,
@@ -541,13 +582,9 @@ func (machine *Machine) setStateNodesIDs() {
 
 	machine.StateNode.id = string(rootID)
 	machine.StateNode.machineID = rootID
+	machine.StateNode.machine = machine
 
-	for stateNodeName, stateNode := range machine.StateNode.States {
-		stateNode.id = machine.StateNode.id + "." + stateNodeName.String()
-		stateNode.machineID = rootID
-
-		stateNode.setChildrenStateNodesIDs(stateNode.id, rootID)
-	}
+	machine.StateNode.setChildrenStateNodesIDs(string(rootID), rootID, machine)
 }
 
 // Validate ensures all transitions targets are valid states.
@@ -635,8 +672,8 @@ func (machine *Machine) executeMicrotask(stateNodeToEnter *StateNode, transition
 	}
 
 	if actions := transitionToExecute.Actions; actions != nil {
-		for index, action := range actions {
-			if err := action(machine.StateNode.Context, event); err != nil {
+		for index, actioner := range actions {
+			if err := executeActioner(actioner, machine, machine.StateNode.Context, event); err != nil {
 				return &ErrAction{
 					Type: transitionActionActionType,
 					ID:   index,
