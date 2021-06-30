@@ -692,3 +692,32 @@ func TestCanDisableLocking(t *testing.T) {
 	assert.NotNil(compoundStateMachine)
 	assert.NoError(err)
 }
+
+func TestGivesGlobalContextDuringInitialTransition(t *testing.T) {
+	assert := assert.New(t)
+
+	stateMachineContext := &struct{}{}
+
+	initialStateOnEntryAction := new(mocks.Action)
+	initialStateOnEntryAction.On("Execute", stateMachineContext, brainy.InitialTransitionEventType).Return(nil)
+
+	stateMachine, err := brainy.NewMachine(brainy.StateNode{
+		Context: stateMachineContext,
+
+		Initial: OnState,
+
+		States: brainy.StateNodes{
+			OnState: &brainy.StateNode{
+				OnEntry: brainy.Actions{
+					brainy.ActionFn(
+						initialStateOnEntryAction.Execute,
+					),
+				},
+			},
+		},
+	}, brainy.WithDisableLocking())
+	assert.NotNil(stateMachine)
+	assert.NoError(err)
+
+	initialStateOnEntryAction.AssertExpectations(t)
+}
