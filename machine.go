@@ -618,7 +618,7 @@ func (machine *Machine) init() error {
 	}
 
 	machine.current = machine.StateNode.resolveMostNestedInitialStateNode()
-	if err := machine.current.executeOnEntryActions(machine.current.Context, InitialTransitionEventType); err != nil {
+	if err := machine.current.executeOnEntryActions(machine.StateNode.Context, InitialTransitionEventType); err != nil {
 		return err
 	}
 
