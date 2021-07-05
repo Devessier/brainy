@@ -721,3 +721,77 @@ func TestGivesGlobalContextDuringInitialTransition(t *testing.T) {
 
 	initialStateOnEntryAction.AssertExpectations(t)
 }
+
+func TestBlankTargetTriggersNoEntryActionsNorExitActions(t *testing.T) {
+	assert := assert.New(t)
+
+	const (
+		InternalEvent brainy.EventType = "INTERNAL"
+	)
+
+	rootOnEntryAction := new(mocks.Action)
+	rootOnEntryAction.On("Execute", mock.Anything, mock.Anything).Return(nil)
+
+	rootOnExitAction := new(mocks.Action)
+	rootOnExitAction.On("Execute", mock.Anything, mock.Anything).Return(nil)
+
+	atomicOnEntryAction := new(mocks.Action)
+	atomicOnEntryAction.On("Execute", mock.Anything, mock.Anything).Return(nil)
+
+	atomicOnExitAction := new(mocks.Action)
+	atomicOnExitAction.On("Execute", mock.Anything, mock.Anything).Return(nil)
+
+	internalEventTransitionAction := new(mocks.Action)
+	internalEventTransitionAction.On("Execute", mock.Anything, mock.Anything).Return(nil)
+
+	compoundStateMachine, err := brainy.NewMachine(brainy.StateNode{
+		Initial: AtomicState,
+
+		OnEntry: brainy.Actions{
+			brainy.ActionFn(rootOnEntryAction.Execute),
+		},
+
+		OnExit: brainy.Actions{
+			brainy.ActionFn(rootOnExitAction.Execute),
+		},
+
+		States: brainy.StateNodes{
+			AtomicState: &brainy.StateNode{
+				OnEntry: brainy.Actions{
+					brainy.ActionFn(atomicOnEntryAction.Execute),
+				},
+
+				OnExit: brainy.Actions{
+					brainy.ActionFn(atomicOnExitAction.Execute),
+				},
+
+				On: brainy.Events{
+					InternalEvent: brainy.Transition{
+						Target: nil,
+						Actions: brainy.Actions{
+							brainy.ActionFn(internalEventTransitionAction.Execute),
+						},
+					},
+				},
+			},
+		},
+	})
+	assert.NotNil(compoundStateMachine)
+	assert.NoError(err)
+
+	assert.True(compoundStateMachine.Current().Matches(AtomicState))
+
+	nextState, err := compoundStateMachine.Send(InternalEvent)
+	assert.NoError(err)
+	assert.True(nextState.Matches(AtomicState))
+	assert.True(compoundStateMachine.Current().Matches(AtomicState))
+
+	rootOnEntryAction.AssertExpectations(t)
+	rootOnEntryAction.AssertNumberOfCalls(t, "Execute", 1)
+	rootOnExitAction.AssertNumberOfCalls(t, "Execute", 0)
+	atomicOnEntryAction.AssertExpectations(t)
+	atomicOnEntryAction.AssertNumberOfCalls(t, "Execute", 1)
+	atomicOnExitAction.AssertNumberOfCalls(t, "Execute", 0)
+	internalEventTransitionAction.AssertExpectations(t)
+	internalEventTransitionAction.AssertNumberOfCalls(t, "Execute", 1)
+}

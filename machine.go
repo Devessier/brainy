@@ -686,8 +686,12 @@ func (machine *Machine) resolveStateNodeToEnter(stateNodeWithHandler *StateNode,
 }
 
 func (machine *Machine) executeMicrotask(stateNodeToEnter *StateNode, transitionToExecute Transition, event Event) error {
-	if err := machine.current.executeOnExitActions(machine.StateNode.Context, event); err != nil {
-		return err
+	isTargetBlank := transitionToExecute.Target == nil || transitionToExecute.Target == NoneState
+
+	if !isTargetBlank {
+		if err := machine.current.executeOnExitActions(machine.StateNode.Context, event); err != nil {
+			return err
+		}
 	}
 
 	if actions := transitionToExecute.Actions; actions != nil {
@@ -702,8 +706,10 @@ func (machine *Machine) executeMicrotask(stateNodeToEnter *StateNode, transition
 		}
 	}
 
-	if err := stateNodeToEnter.executeOnEntryActions(machine.StateNode.Context, event); err != nil {
-		return err
+	if !isTargetBlank {
+		if err := stateNodeToEnter.executeOnEntryActions(machine.StateNode.Context, event); err != nil {
+			return err
+		}
 	}
 
 	return nil
