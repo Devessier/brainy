@@ -292,9 +292,10 @@ type Cond func(Context, Event) bool
 // can be used to do fire-and-forget actions, or to assign values to the context of the state machine,
 // as currently there is no built-in assign action in brainy.
 type Transition struct {
-	Cond    Cond
-	Target  Targeter
-	Actions Actions
+	Cond     Cond
+	Target   Targeter
+	Internal bool
+	Actions  Actions
 }
 
 func (t Transition) transitions() []Transition {
@@ -433,12 +434,82 @@ func executeActioner(actioner Actioner, machine *Machine, context Context, event
 	return nil
 }
 
-func (s *StateNode) executeOnEntryActions(c Context, e Event) error {
+func (s *StateNode) getProperAncestors() []*StateNode {
+	ancestors := make([]*StateNode, 0)
+	stateNode := s.parentStateNode
+
+	for stateNode != nil {
+		ancestors = append(ancestors, stateNode)
+
+		stateNode = stateNode.parentStateNode
+	}
+
+	return ancestors
+}
+
+func (s *StateNode) getCompoundAncestors() []*StateNode {
+	ancestors := s.getProperAncestors()
+	compoundAncestors := make([]*StateNode, 0, len(ancestors))
+
+	for _, ancestor := range ancestors {
+		if ancestor.isCompound() {
+			compoundAncestors = append(compoundAncestors, ancestor)
+		}
+	}
+
+	return compoundAncestors
+}
+
+func (s *StateNode) isDescendantOf(ancestor *StateNode) bool {
+	parentStateNode := s.parentStateNode
+
+	for parentStateNode != nil {
+		if parentStateNode == ancestor {
+			return true
+		}
+
+		parentStateNode = parentStateNode.parentStateNode
+	}
+
+	return false
+}
+
+func allStateNodesAreAncestorDescendant(stateNodes []*StateNode, ancestor *StateNode) bool {
+	for _, stateNodeToCompare := range stateNodes {
+		isNotDescendantOfAncestor := !stateNodeToCompare.isDescendantOf(ancestor)
+		if isNotDescendantOfAncestor {
+			return false
+		}
+	}
+
+	return true
+}
+
+func findLeastCommonCompoundAncestor(stateNodes []*StateNode) *StateNode {
+	// We need at least one reference state node and one state node to compare.
+	if len(stateNodes) < 2 {
+		return nil
+	}
+
+	referenceStateNode := stateNodes[0]
+	referenceStateNodeAncestors := referenceStateNode.getCompoundAncestors()
+	stateNodesToCompare := stateNodes[1:]
+
+	for _, ancestor := range referenceStateNodeAncestors {
+		if allStateNodesAreAncestorDescendant(stateNodesToCompare, ancestor) {
+			return ancestor
+		}
+	}
+
+	return nil
+}
+
+func (s *StateNode) executeOnEntryActions(c Context, e Event, leastCommonCompoundAncestor *StateNode, isTransitionInternal bool) error {
 	actionsToCall := make([]Actioner, 0)
 
 	stateNodeToEntry := s
 
-	for stateNodeToEntry != nil {
+	for stateNodeToEntry != leastCommonCompoundAncestor {
 		if onEntryActions := stateNodeToEntry.OnEntry; onEntryActions != nil {
 			actionsToCall = append(actionsToCall, onEntryActions...)
 		}
@@ -466,10 +537,10 @@ func (s *StateNode) executeOnEntryActions(c Context, e Event) error {
 	return nil
 }
 
-func (s *StateNode) executeOnExitActions(c Context, e Event) error {
+func (s *StateNode) executeOnExitActions(c Context, e Event, leastCommonCompoundAncestor *StateNode, isTransitionInternal bool) error {
 	stateNodeToExit := s
 
-	for stateNodeToExit != nil {
+	for stateNodeToExit != leastCommonCompoundAncestor {
 		if onExitActions := stateNodeToExit.OnExit; onExitActions != nil {
 			for index, actioner := range onExitActions {
 				if err := executeActioner(actioner, s.machine, c, e); err != nil {
@@ -612,13 +683,18 @@ func (machine *Machine) validate() error {
 }
 
 // Init initializes the machine and validates transitions target state.
+//
+// The LCCA state node passed to executeOnEntryActions is nil as we want the OnEntry actions
+// of the root state node:
+// During the initial transition, the least common compound ancestor is the parent of the root state,
+// that is, in our implementation, nil, as it does not have any parent.
 func (machine *Machine) init() error {
 	if err := machine.validate(); err != nil {
 		return err
 	}
 
 	machine.current = machine.StateNode.resolveMostNestedInitialStateNode()
-	if err := machine.current.executeOnEntryActions(machine.StateNode.Context, InitialTransitionEventType); err != nil {
+	if err := machine.current.executeOnEntryActions(machine.StateNode.Context, InitialTransitionEventType, nil, false); err != nil {
 		return err
 	}
 
@@ -687,9 +763,11 @@ func (machine *Machine) resolveStateNodeToEnter(stateNodeWithHandler *StateNode,
 
 func (machine *Machine) executeMicrotask(stateNodeToEnter *StateNode, transitionToExecute Transition, event Event) error {
 	isTargetBlank := transitionToExecute.Target == nil || transitionToExecute.Target == NoneState
+	isTransitionInternal := transitionToExecute.Internal
+	leastCommonCompoundAncestor := findLeastCommonCompoundAncestor([]*StateNode{machine.current, stateNodeToEnter})
 
 	if !isTargetBlank {
-		if err := machine.current.executeOnExitActions(machine.StateNode.Context, event); err != nil {
+		if err := machine.current.executeOnExitActions(machine.StateNode.Context, event, leastCommonCompoundAncestor, isTransitionInternal); err != nil {
 			return err
 		}
 	}
@@ -707,7 +785,7 @@ func (machine *Machine) executeMicrotask(stateNodeToEnter *StateNode, transition
 	}
 
 	if !isTargetBlank {
-		if err := stateNodeToEnter.executeOnEntryActions(machine.StateNode.Context, event); err != nil {
+		if err := stateNodeToEnter.executeOnEntryActions(machine.StateNode.Context, event, leastCommonCompoundAncestor, isTransitionInternal); err != nil {
 			return err
 		}
 	}
