@@ -298,6 +298,10 @@ type Transition struct {
 	Actions  Actions
 }
 
+func (t Transition) isTargetBlank() bool {
+	return t.Target == nil || t.Target == NoneState
+}
+
 func (t Transition) transitions() []Transition {
 	return []Transition{t}
 }
@@ -603,7 +607,7 @@ func (s *StateNode) validate(m *Machine) error {
 
 			for _, transition := range transitions {
 				target := transition.Target
-				if target == nil || target == NoneState {
+				if transition.isTargetBlank() {
 					continue
 				}
 
@@ -757,7 +761,7 @@ func (machine *Machine) selectTransition(transitions []Transition, event Event) 
 
 func (machine *Machine) resolveStateNodeToEnter(stateNodeWithHandler *StateNode, transitionToExecute Transition) (*StateNode, error) {
 	stateNodeToEnter := stateNodeWithHandler
-	if target := transitionToExecute.Target; target != nil && target != NoneState {
+	if target := transitionToExecute.Target; !transitionToExecute.isTargetBlank() {
 		// Get parent node to be able to target sibbling state nodes.
 		parentStateNode := stateNodeWithHandler.parentStateNode
 		if parentStateNode == nil {
@@ -776,11 +780,10 @@ func (machine *Machine) resolveStateNodeToEnter(stateNodeWithHandler *StateNode,
 }
 
 func (machine *Machine) executeMicrotask(stateNodeToEnter *StateNode, transitionToExecute Transition, event Event) error {
-	isTargetBlank := transitionToExecute.Target == nil || transitionToExecute.Target == NoneState
 	isTransitionInternal := transitionToExecute.Internal
 	leastCommonCompoundAncestor := findLeastCommonCompoundAncestor([]*StateNode{machine.current, stateNodeToEnter})
 
-	if !isTargetBlank {
+	if !transitionToExecute.isTargetBlank() {
 		if err := machine.current.executeOnExitActions(machine.StateNode.Context, event, leastCommonCompoundAncestor, isTransitionInternal); err != nil {
 			return err
 		}
@@ -798,7 +801,7 @@ func (machine *Machine) executeMicrotask(stateNodeToEnter *StateNode, transition
 		}
 	}
 
-	if !isTargetBlank {
+	if !transitionToExecute.isTargetBlank() {
 		if err := stateNodeToEnter.executeOnEntryActions(machine.StateNode.Context, event, leastCommonCompoundAncestor, isTransitionInternal); err != nil {
 			return err
 		}
