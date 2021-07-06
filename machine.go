@@ -306,19 +306,29 @@ func (t Transition) transitions() []Transition {
 // We can use as values a single Transition as well as a Transitions slice.
 type Events map[EventType]Transitioner
 
-// JoinStatesIDs takes an unlimited number of state types and returns
-// them as a concatenated string, each of them separed by a "." character.
-func JoinStatesIDs(statesIDs ...StateType) string {
-	concatenatedIDs := ""
+func joinStatesIDs(statesIDs ...string) string {
+	concatenatedID := ""
 
-	for index, id := range statesIDs {
-		concatenatedIDs += id.String()
-		if index < len(statesIDs)-1 {
-			concatenatedIDs += "."
+	for index, stateID := range statesIDs {
+		if index != 0 {
+			concatenatedID += "."
 		}
+		concatenatedID += stateID
 	}
 
-	return concatenatedIDs
+	return concatenatedID
+}
+
+// joinStateTypes takes an unlimited number of state types and returns
+// them as a concatenated string, each of them separed by a "." character.
+func joinStateTypes(statesIDs ...StateType) string {
+	stateIDsAsStrings := make([]string, 0, len(statesIDs))
+
+	for _, stateID := range statesIDs {
+		stateIDsAsStrings = append(stateIDsAsStrings, stateID.String())
+	}
+
+	return joinStatesIDs(stateIDsAsStrings...)
 }
 
 // A StateNode is a node of the state machine.
@@ -368,7 +378,7 @@ func (s *StateNode) Matches(stateSelectors ...StateType) bool {
 	selectorsWithMachineID = append(selectorsWithMachineID, s.machineID)
 	selectorsWithMachineID = append(selectorsWithMachineID, stateSelectors...)
 
-	rebuiltStateID := JoinStatesIDs(selectorsWithMachineID...)
+	rebuiltStateID := joinStateTypes(selectorsWithMachineID...)
 
 	doesMatch := strings.HasPrefix(s.id, rebuiltStateID)
 	return doesMatch
@@ -376,7 +386,7 @@ func (s *StateNode) Matches(stateSelectors ...StateType) bool {
 
 func (s *StateNode) setChildrenStateNodesIDs(parentStateNodeID string, machineID StateType, machine *Machine) {
 	for childStateNodeName, childStateNode := range s.States {
-		childStateNode.id = parentStateNodeID + "." + childStateNodeName.String()
+		childStateNode.id = joinStatesIDs(parentStateNodeID, childStateNodeName.String())
 		childStateNode.machineID = machineID
 		childStateNode.machine = machine
 
@@ -405,14 +415,19 @@ func (s *StateNode) resolveMostNestedInitialStateNode() *StateNode {
 
 func (s *StateNode) getTarget(t Targeter) (*StateNode, bool) {
 	targetID := t.String()
+	baseStateNode := s.id
+	if s.parentStateNode != nil {
+		baseStateNode = s.parentStateNode.id
+	}
+	expectedIDBeginning := joinStatesIDs(baseStateNode, targetID)
 
 	for _, childStateNode := range s.States {
-		if stateNodeIDEndsWithTargetID := strings.HasSuffix(childStateNode.id, targetID); stateNodeIDEndsWithTargetID {
+		if stateNodeIDBeginsWithTargetID := strings.HasPrefix(childStateNode.id, expectedIDBeginning); stateNodeIDBeginsWithTargetID {
 			return childStateNode.resolveMostNestedInitialStateNode(), true
 		}
 
 		if matchingChildStateNode, ok := childStateNode.getTarget(t); ok {
-			return matchingChildStateNode.resolveMostNestedInitialStateNode(), true
+			return matchingChildStateNode, true
 		}
 	}
 

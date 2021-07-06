@@ -855,3 +855,65 @@ func TestBlankTargetTriggersNoEntryActionsNorExitActions(t *testing.T) {
 	internalEventTransitionAction.AssertExpectations(t)
 	internalEventTransitionAction.AssertNumberOfCalls(t, "Execute", 1)
 }
+
+// Test that children states can only be targeted using a CompoundTarget.
+// This is due to the fact that transitions can only occur between sibbling states.
+// To target a child state, we must first target the state itself, that is itself sibbling,
+// and then target the child state.
+func TestResolvesChildTransitionsCorrectly(t *testing.T) {
+	assert := assert.New(t)
+
+	invalidCompoundStateMachine, err := brainy.NewMachine(brainy.StateNode{
+		Initial: CompoundState,
+
+		States: brainy.StateNodes{
+			CompoundState: &brainy.StateNode{
+				Initial: NestedAState,
+
+				States: brainy.StateNodes{
+					NestedAState: &brainy.StateNode{},
+
+					NestedBState: &brainy.StateNode{},
+				},
+
+				On: brainy.Events{
+					GoToNestedBStateEvent: brainy.Transition{
+						Target:   NestedBState,
+						Internal: true,
+					},
+				},
+			},
+		},
+	})
+	assert.Nil(invalidCompoundStateMachine)
+	assert.Error(err)
+	assert.ErrorIs(err, brainy.ErrInvalidTransitionNotImplemented)
+
+	validCompoundStateMachine, err := brainy.NewMachine(brainy.StateNode{
+		Initial: CompoundState,
+
+		States: brainy.StateNodes{
+			CompoundState: &brainy.StateNode{
+				Initial: NestedAState,
+
+				States: brainy.StateNodes{
+					NestedAState: &brainy.StateNode{},
+
+					NestedBState: &brainy.StateNode{},
+				},
+
+				On: brainy.Events{
+					GoToNestedBStateEvent: brainy.Transition{
+						Target: brainy.CompoundTarget{
+							CompoundState: NestedBState,
+						},
+						Internal: true,
+					},
+				},
+			},
+		},
+	})
+	assert.NotNil(validCompoundStateMachine)
+	assert.NoError(err)
+}
+
