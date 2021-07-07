@@ -917,3 +917,127 @@ func TestResolvesChildTransitionsCorrectly(t *testing.T) {
 	assert.NoError(err)
 }
 
+func TestInternalTransitionOnlyTriggersExitActionsOfActiveStatesIfTargetIsADescendantOfSourceState(t *testing.T) {
+	assert := assert.New(t)
+
+	// 1
+	initialStateOnEntryAction := new(mocks.Action)
+	initialStateOnEntryAction.On("Execute", mock.Anything, mock.Anything).Return(nil).Once()
+	initialStateOnExitAction := new(mocks.Action)
+	initialStateOnExitAction.On("Execute", mock.Anything, mock.Anything).Return(nil).Times(0)
+
+	// 1
+	compoundStateOnEntryAction := new(mocks.Action)
+	compoundStateOnEntryAction.On("Execute", mock.Anything, mock.Anything).Return(nil).Once()
+	compoundStateOnExitAction := new(mocks.Action)
+	compoundStateOnExitAction.On("Execute", mock.Anything, mock.Anything).Return(nil).Once()
+
+	// 1
+	nestedAStateStateOnEntryAction := new(mocks.Action)
+	nestedAStateStateOnEntryAction.On("Execute", mock.Anything, mock.Anything).Return(nil).Once()
+	// 1
+	nestedAStateStateOnExitAction := new(mocks.Action)
+	nestedAStateStateOnExitAction.On("Execute", mock.Anything, mock.Anything).Return(nil).Once()
+
+	// 1
+	nestedBStateStateOnEntryAction := new(mocks.Action)
+	nestedBStateStateOnEntryAction.On("Execute", mock.Anything, mock.Anything).Return(nil).Once()
+	// 0
+	nestedBStateStateOnExitAction := new(mocks.Action)
+	nestedBStateStateOnExitAction.On("Execute", mock.Anything, mock.Anything).Return(nil).Once()
+
+	atomicStateOnEntryAction := new(mocks.Action)
+	atomicStateOnEntryAction.On("Execute", mock.Anything, mock.Anything).Return(nil).Once()
+	atomicStateOnExitAction := new(mocks.Action)
+	atomicStateOnExitAction.On("Execute", mock.Anything, mock.Anything).Return(nil).Times(0)
+
+	compoundStateMachine, err := brainy.NewMachine(brainy.StateNode{
+		Initial: CompoundState,
+
+		OnEntry: brainy.Actions{
+			brainy.ActionFn(initialStateOnEntryAction.Execute),
+		},
+
+		OnExit: brainy.Actions{
+			brainy.ActionFn(initialStateOnExitAction.Execute),
+		},
+
+		States: brainy.StateNodes{
+			CompoundState: &brainy.StateNode{
+				Initial: NestedAState,
+
+				OnEntry: brainy.Actions{
+					brainy.ActionFn(compoundStateOnEntryAction.Execute),
+				},
+
+				OnExit: brainy.Actions{
+					brainy.ActionFn(compoundStateOnExitAction.Execute),
+				},
+
+				States: brainy.StateNodes{
+					NestedAState: &brainy.StateNode{
+						OnEntry: brainy.Actions{
+							brainy.ActionFn(nestedAStateStateOnEntryAction.Execute),
+						},
+
+						OnExit: brainy.Actions{
+							brainy.ActionFn(nestedAStateStateOnExitAction.Execute),
+						},
+					},
+
+					NestedBState: &brainy.StateNode{
+						OnEntry: brainy.Actions{
+							brainy.ActionFn(nestedBStateStateOnEntryAction.Execute),
+						},
+
+						OnExit: brainy.Actions{
+							brainy.ActionFn(nestedBStateStateOnExitAction.Execute),
+						},
+					},
+				},
+
+				On: brainy.Events{
+					GoToNestedBStateEvent: brainy.Transition{
+						Target: brainy.CompoundTarget{
+							CompoundState: NestedBState,
+						},
+						Internal: true,
+					},
+
+					ExitCompoundStateEvent: AtomicState,
+				},
+			},
+
+			AtomicState: &brainy.StateNode{
+				OnEntry: brainy.Actions{
+					brainy.ActionFn(atomicStateOnEntryAction.Execute),
+				},
+
+				OnExit: brainy.Actions{
+					brainy.ActionFn(atomicStateOnExitAction.Execute),
+				},
+			},
+		},
+	})
+	assert.NotNil(compoundStateMachine)
+	assert.NoError(err)
+
+	nextState, err := compoundStateMachine.Send(GoToNestedBStateEvent)
+	assert.NoError(err)
+	assert.True(nextState.Matches(CompoundState, NestedBState))
+
+	nextState, err = compoundStateMachine.Send(ExitCompoundStateEvent)
+	assert.NoError(err)
+	assert.True(nextState.Matches(AtomicState))
+
+	initialStateOnEntryAction.AssertExpectations(t)
+	initialStateOnExitAction.AssertNumberOfCalls(t, "Execute", 0)
+	compoundStateOnEntryAction.AssertExpectations(t)
+	compoundStateOnExitAction.AssertExpectations(t)
+	nestedAStateStateOnEntryAction.AssertExpectations(t)
+	nestedAStateStateOnExitAction.AssertExpectations(t)
+	nestedBStateStateOnEntryAction.AssertExpectations(t)
+	nestedBStateStateOnExitAction.AssertExpectations(t)
+	atomicStateOnEntryAction.AssertExpectations(t)
+	atomicStateOnExitAction.AssertNumberOfCalls(t, "Execute", 0)
+}
