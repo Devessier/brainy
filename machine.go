@@ -646,7 +646,7 @@ func WithDisableLocking() MachineOption {
 func NewMachine(config StateNode, options ...MachineOption) (*Machine, error) {
 	machine := &Machine{
 		StateNode:      &config,
-		externalEvents: NewEventsQueue(),
+		externalEvents: newEventsQueue(),
 	}
 	if err := machine.init(); err != nil {
 		return nil, err
@@ -668,7 +668,7 @@ type Machine struct {
 
 	StateNode *StateNode
 
-	externalEvents *EventsQueue
+	externalEvents *eventsQueue
 
 	previous *StateNode
 	current  *StateNode
