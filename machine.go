@@ -297,6 +297,10 @@ type Transition struct {
 	Actions Actions
 }
 
+func (t Transition) isTargetBlank() bool {
+	return t.Target == nil || t.Target == NoneState
+}
+
 func (t Transition) transitions() []Transition {
 	return []Transition{t}
 }
@@ -305,19 +309,29 @@ func (t Transition) transitions() []Transition {
 // We can use as values a single Transition as well as a Transitions slice.
 type Events map[EventType]Transitioner
 
-// JoinStatesIDs takes an unlimited number of state types and returns
-// them as a concatenated string, each of them separed by a "." character.
-func JoinStatesIDs(statesIDs ...StateType) string {
-	concatenatedIDs := ""
+func joinStatesIDs(statesIDs ...string) string {
+	concatenatedID := ""
 
-	for index, id := range statesIDs {
-		concatenatedIDs += id.String()
-		if index < len(statesIDs)-1 {
-			concatenatedIDs += "."
+	for index, stateID := range statesIDs {
+		if index != 0 {
+			concatenatedID += "."
 		}
+		concatenatedID += stateID
 	}
 
-	return concatenatedIDs
+	return concatenatedID
+}
+
+// joinStateTypes takes an unlimited number of state types and returns
+// them as a concatenated string, each of them separed by a "." character.
+func joinStateTypes(statesIDs ...StateType) string {
+	stateIDsAsStrings := make([]string, 0, len(statesIDs))
+
+	for _, stateID := range statesIDs {
+		stateIDsAsStrings = append(stateIDsAsStrings, stateID.String())
+	}
+
+	return joinStatesIDs(stateIDsAsStrings...)
 }
 
 // A StateNode is a node of the state machine.
@@ -367,7 +381,7 @@ func (s *StateNode) Matches(stateSelectors ...StateType) bool {
 	selectorsWithMachineID = append(selectorsWithMachineID, s.machineID)
 	selectorsWithMachineID = append(selectorsWithMachineID, stateSelectors...)
 
-	rebuiltStateID := JoinStatesIDs(selectorsWithMachineID...)
+	rebuiltStateID := joinStateTypes(selectorsWithMachineID...)
 
 	doesMatch := strings.HasPrefix(s.id, rebuiltStateID)
 	return doesMatch
@@ -375,7 +389,7 @@ func (s *StateNode) Matches(stateSelectors ...StateType) bool {
 
 func (s *StateNode) setChildrenStateNodesIDs(parentStateNodeID string, machineID StateType, machine *Machine) {
 	for childStateNodeName, childStateNode := range s.States {
-		childStateNode.id = parentStateNodeID + "." + childStateNodeName.String()
+		childStateNode.id = joinStatesIDs(parentStateNodeID, childStateNodeName.String())
 		childStateNode.machineID = machineID
 		childStateNode.machine = machine
 
@@ -404,14 +418,19 @@ func (s *StateNode) resolveMostNestedInitialStateNode() *StateNode {
 
 func (s *StateNode) getTarget(t Targeter) (*StateNode, bool) {
 	targetID := t.String()
+	baseStateNode := s.id
+	if s.parentStateNode != nil {
+		baseStateNode = s.parentStateNode.id
+	}
+	expectedIDBeginning := joinStatesIDs(baseStateNode, targetID)
 
 	for _, childStateNode := range s.States {
-		if stateNodeIDEndsWithTargetID := strings.HasSuffix(childStateNode.id, targetID); stateNodeIDEndsWithTargetID {
+		if stateNodeIDBeginsWithTargetID := strings.HasPrefix(childStateNode.id, expectedIDBeginning); stateNodeIDBeginsWithTargetID {
 			return childStateNode.resolveMostNestedInitialStateNode(), true
 		}
 
 		if matchingChildStateNode, ok := childStateNode.getTarget(t); ok {
-			return matchingChildStateNode.resolveMostNestedInitialStateNode(), true
+			return matchingChildStateNode, true
 		}
 	}
 
@@ -433,12 +452,82 @@ func executeActioner(actioner Actioner, machine *Machine, context Context, event
 	return nil
 }
 
-func (s *StateNode) executeOnEntryActions(c Context, e Event) error {
+func (s *StateNode) getProperAncestors() []*StateNode {
+	ancestors := make([]*StateNode, 0)
+	stateNode := s.parentStateNode
+
+	for stateNode != nil {
+		ancestors = append(ancestors, stateNode)
+
+		stateNode = stateNode.parentStateNode
+	}
+
+	return ancestors
+}
+
+func (s *StateNode) getCompoundAncestors() []*StateNode {
+	ancestors := s.getProperAncestors()
+	compoundAncestors := make([]*StateNode, 0, len(ancestors))
+
+	for _, ancestor := range ancestors {
+		if ancestor.isCompound() {
+			compoundAncestors = append(compoundAncestors, ancestor)
+		}
+	}
+
+	return compoundAncestors
+}
+
+func (s *StateNode) isDescendantOf(ancestor *StateNode) bool {
+	parentStateNode := s.parentStateNode
+
+	for parentStateNode != nil {
+		if parentStateNode == ancestor {
+			return true
+		}
+
+		parentStateNode = parentStateNode.parentStateNode
+	}
+
+	return false
+}
+
+func allStateNodesAreAncestorDescendant(stateNodes []*StateNode, ancestor *StateNode) bool {
+	for _, stateNodeToCompare := range stateNodes {
+		isNotDescendantOfAncestor := !stateNodeToCompare.isDescendantOf(ancestor)
+		if isNotDescendantOfAncestor {
+			return false
+		}
+	}
+
+	return true
+}
+
+func findLeastCommonCompoundAncestor(stateNodes []*StateNode) *StateNode {
+	// We need at least one reference state node and one state node to compare.
+	if len(stateNodes) < 2 {
+		return nil
+	}
+
+	referenceStateNode := stateNodes[0]
+	referenceStateNodeAncestors := referenceStateNode.getCompoundAncestors()
+	stateNodesToCompare := stateNodes[1:]
+
+	for _, ancestor := range referenceStateNodeAncestors {
+		if allStateNodesAreAncestorDescendant(stateNodesToCompare, ancestor) {
+			return ancestor
+		}
+	}
+
+	return nil
+}
+
+func (s *StateNode) executeOnEntryActions(c Context, e Event, leastCommonCompoundAncestor *StateNode) error {
 	actionsToCall := make([]Actioner, 0)
 
 	stateNodeToEntry := s
 
-	for stateNodeToEntry != nil {
+	for stateNodeToEntry != leastCommonCompoundAncestor {
 		if onEntryActions := stateNodeToEntry.OnEntry; onEntryActions != nil {
 			actionsToCall = append(actionsToCall, onEntryActions...)
 		}
@@ -466,10 +555,10 @@ func (s *StateNode) executeOnEntryActions(c Context, e Event) error {
 	return nil
 }
 
-func (s *StateNode) executeOnExitActions(c Context, e Event) error {
+func (s *StateNode) executeOnExitActions(c Context, e Event, leastCommonCompoundAncestor *StateNode) error {
 	stateNodeToExit := s
 
-	for stateNodeToExit != nil {
+	for stateNodeToExit != leastCommonCompoundAncestor {
 		if onExitActions := stateNodeToExit.OnExit; onExitActions != nil {
 			for index, actioner := range onExitActions {
 				if err := executeActioner(actioner, s.machine, c, e); err != nil {
@@ -507,13 +596,6 @@ func (s *StateNode) validate(m *Machine) error {
 		// Set the parentStateNode of each state node
 		stateNode.parentStateNode = s
 
-		// Recursively validate children states
-		if stateNode.isCompound() {
-			if err := stateNode.validate(m); err != nil {
-				return err
-			}
-		}
-
 		handlers := stateNode.On
 		if handlers == nil {
 			continue
@@ -524,7 +606,7 @@ func (s *StateNode) validate(m *Machine) error {
 
 			for _, transition := range transitions {
 				target := transition.Target
-				if target == nil || target == NoneState {
+				if transition.isTargetBlank() {
 					continue
 				}
 
@@ -534,6 +616,12 @@ func (s *StateNode) validate(m *Machine) error {
 			}
 		}
 
+		// Recursively validate children states
+		if stateNode.isCompound() {
+			if err := stateNode.validate(m); err != nil {
+				return err
+			}
+		}
 	}
 
 	return nil
@@ -558,7 +646,7 @@ func WithDisableLocking() MachineOption {
 func NewMachine(config StateNode, options ...MachineOption) (*Machine, error) {
 	machine := &Machine{
 		StateNode:      &config,
-		externalEvents: NewEventsQueue(),
+		externalEvents: newEventsQueue(),
 	}
 	if err := machine.init(); err != nil {
 		return nil, err
@@ -580,7 +668,7 @@ type Machine struct {
 
 	StateNode *StateNode
 
-	externalEvents *EventsQueue
+	externalEvents *eventsQueue
 
 	previous *StateNode
 	current  *StateNode
@@ -612,13 +700,18 @@ func (machine *Machine) validate() error {
 }
 
 // Init initializes the machine and validates transitions target state.
+//
+// The LCCA state node passed to executeOnEntryActions is nil as we want the OnEntry actions
+// of the root state node:
+// During the initial transition, the least common compound ancestor is the parent of the root state,
+// that is, in our implementation, nil, as it does not have any parent.
 func (machine *Machine) init() error {
 	if err := machine.validate(); err != nil {
 		return err
 	}
 
 	machine.current = machine.StateNode.resolveMostNestedInitialStateNode()
-	if err := machine.current.executeOnEntryActions(machine.StateNode.Context, InitialTransitionEventType); err != nil {
+	if err := machine.current.executeOnEntryActions(machine.StateNode.Context, InitialTransitionEventType, nil); err != nil {
 		return err
 	}
 
@@ -667,7 +760,7 @@ func (machine *Machine) selectTransition(transitions []Transition, event Event) 
 
 func (machine *Machine) resolveStateNodeToEnter(stateNodeWithHandler *StateNode, transitionToExecute Transition) (*StateNode, error) {
 	stateNodeToEnter := stateNodeWithHandler
-	if target := transitionToExecute.Target; target != nil && target != NoneState {
+	if target := transitionToExecute.Target; !transitionToExecute.isTargetBlank() {
 		// Get parent node to be able to target sibbling state nodes.
 		parentStateNode := stateNodeWithHandler.parentStateNode
 		if parentStateNode == nil {
@@ -686,8 +779,12 @@ func (machine *Machine) resolveStateNodeToEnter(stateNodeWithHandler *StateNode,
 }
 
 func (machine *Machine) executeMicrotask(stateNodeToEnter *StateNode, transitionToExecute Transition, event Event) error {
-	if err := machine.current.executeOnExitActions(machine.StateNode.Context, event); err != nil {
-		return err
+	leastCommonCompoundAncestor := findLeastCommonCompoundAncestor([]*StateNode{machine.current, stateNodeToEnter})
+
+	if !transitionToExecute.isTargetBlank() {
+		if err := machine.current.executeOnExitActions(machine.StateNode.Context, event, leastCommonCompoundAncestor); err != nil {
+			return err
+		}
 	}
 
 	if actions := transitionToExecute.Actions; actions != nil {
@@ -702,8 +799,10 @@ func (machine *Machine) executeMicrotask(stateNodeToEnter *StateNode, transition
 		}
 	}
 
-	if err := stateNodeToEnter.executeOnEntryActions(machine.StateNode.Context, event); err != nil {
-		return err
+	if !transitionToExecute.isTargetBlank() {
+		if err := stateNodeToEnter.executeOnEntryActions(machine.StateNode.Context, event, leastCommonCompoundAncestor); err != nil {
+			return err
+		}
 	}
 
 	return nil

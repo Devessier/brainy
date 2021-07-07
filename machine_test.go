@@ -531,33 +531,79 @@ func TestCompoundStates(t *testing.T) {
 	assert := assert.New(t)
 
 	const (
+		RootOnEntry string = "RootOnEntry"
+		RootOnExit  string = "RootOnExit"
+
 		CompoundStateOnEntry string = "CompoundStateOnEntry"
-		NestedAStateOnEntry  string = "CompoundStateOnEntry"
-		NestedBStateOnEntry  string = "CompoundStateOnEntry"
-		AtomicStateOnEntry   string = "AtomicStateOnEntry"
+		CompoundStateOnExit  string = "CompoundStateOnExit"
+
+		NestedAStateOnEntry string = "NestedAStateOnEntry"
+		NestedAStateOnExit  string = "NestedAStateOnExit"
+
+		NestedBStateOnEntry string = "NestedBStateOnEntry"
+		NestedBStateOnExit  string = "NestedBStateOnExit"
+
+		AtomicStateOnEntry string = "AtomicStateOnEntry"
+		AtomicStateOnExit  string = "AtomicStateOnExit"
 	)
 
 	calledActions := make([]string, 0)
+
+	rootOnEntryAction := new(mocks.Action)
+	rootOnEntryAction.On("Execute", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+		calledActions = append(calledActions, RootOnEntry)
+	})
+	rootOnExitAction := new(mocks.Action)
+	rootOnExitAction.On("Execute", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+		calledActions = append(calledActions, RootOnExit)
+	})
 
 	compoundStateOnEntryAction := new(mocks.Action)
 	compoundStateOnEntryAction.On("Execute", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 		calledActions = append(calledActions, CompoundStateOnEntry)
 	})
+	compoundStateOnExitAction := new(mocks.Action)
+	compoundStateOnExitAction.On("Execute", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+		calledActions = append(calledActions, CompoundStateOnExit)
+	})
+
 	nestedAStateStateOnEntryAction := new(mocks.Action)
 	nestedAStateStateOnEntryAction.On("Execute", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 		calledActions = append(calledActions, NestedAStateOnEntry)
 	})
+	nestedAStateStateOnExitAction := new(mocks.Action)
+	nestedAStateStateOnExitAction.On("Execute", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+		calledActions = append(calledActions, NestedAStateOnExit)
+	})
+
 	nestedBStateStateOnEntryAction := new(mocks.Action)
 	nestedBStateStateOnEntryAction.On("Execute", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 		calledActions = append(calledActions, NestedBStateOnEntry)
 	})
+	nestedBStateStateOnExitAction := new(mocks.Action)
+	nestedBStateStateOnExitAction.On("Execute", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+		calledActions = append(calledActions, NestedBStateOnExit)
+	})
+
 	atomicStateOnEntryAction := new(mocks.Action)
 	atomicStateOnEntryAction.On("Execute", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
 		calledActions = append(calledActions, AtomicStateOnEntry)
 	})
+	atomicStateOnExitAction := new(mocks.Action)
+	atomicStateOnExitAction.On("Execute", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+		calledActions = append(calledActions, AtomicStateOnExit)
+	})
 
 	compoundStateMachine, err := brainy.NewMachine(brainy.StateNode{
 		Initial: CompoundState,
+
+		OnEntry: brainy.Actions{
+			brainy.ActionFn(rootOnEntryAction.Execute),
+		},
+
+		OnExit: brainy.Actions{
+			brainy.ActionFn(rootOnExitAction.Execute),
+		},
 
 		States: brainy.StateNodes{
 			CompoundState: &brainy.StateNode{
@@ -567,14 +613,18 @@ func TestCompoundStates(t *testing.T) {
 					brainy.ActionFn(compoundStateOnEntryAction.Execute),
 				},
 
+				OnExit: brainy.Actions{
+					brainy.ActionFn(compoundStateOnExitAction.Execute),
+				},
+
 				States: brainy.StateNodes{
 					NestedAState: &brainy.StateNode{
 						OnEntry: brainy.Actions{
 							brainy.ActionFn(nestedAStateStateOnEntryAction.Execute),
 						},
 
-						On: brainy.Events{
-							GoToNestedBStateEvent: NestedBState,
+						OnExit: brainy.Actions{
+							brainy.ActionFn(nestedAStateStateOnExitAction.Execute),
 						},
 					},
 
@@ -582,10 +632,18 @@ func TestCompoundStates(t *testing.T) {
 						OnEntry: brainy.Actions{
 							brainy.ActionFn(nestedBStateStateOnEntryAction.Execute),
 						},
+
+						OnExit: brainy.Actions{
+							brainy.ActionFn(nestedBStateStateOnExitAction.Execute),
+						},
 					},
 				},
 
 				On: brainy.Events{
+					GoToNestedBStateEvent: brainy.CompoundTarget{
+						CompoundState: NestedBState,
+					},
+
 					ExitCompoundStateEvent: AtomicState,
 				},
 			},
@@ -595,10 +653,8 @@ func TestCompoundStates(t *testing.T) {
 					brainy.ActionFn(atomicStateOnEntryAction.Execute),
 				},
 
-				On: brainy.Events{
-					GoToNestedBStateEvent: brainy.CompoundTarget{
-						CompoundState: NestedBState,
-					},
+				OnExit: brainy.Actions{
+					brainy.ActionFn(atomicStateOnExitAction.Execute),
 				},
 			},
 		},
@@ -608,7 +664,6 @@ func TestCompoundStates(t *testing.T) {
 
 	compoundStateOnEntryAction.AssertCalled(t, "Execute", nil, brainy.InitialTransitionEventType)
 	nestedAStateStateOnEntryAction.AssertCalled(t, "Execute", nil, brainy.InitialTransitionEventType)
-	assert.True(compoundStateMachine.Current().Matches(CompoundState, NestedAState))
 	assert.True(compoundStateMachine.Current().Matches(CompoundState, NestedAState))
 
 	nextState, err := compoundStateMachine.Send(GoToNestedBStateEvent)
@@ -620,12 +675,20 @@ func TestCompoundStates(t *testing.T) {
 	assert.True(nextState.Matches(AtomicState))
 
 	assert.Equal([]string{
+		RootOnEntry,
 		CompoundStateOnEntry,
 		NestedAStateOnEntry,
 
-		CompoundStateOnEntry,
+		NestedAStateOnExit,
+		// We do not handle onentry and onexit states as described in SCXML specification.
+		// We choose to do not take care of that for now.
+		//
+		// CompoundStateOnExit,
+		// CompoundStateOnEntry,
 		NestedBStateOnEntry,
 
+		NestedBStateOnExit,
+		CompoundStateOnExit,
 		AtomicStateOnEntry,
 	}, calledActions)
 	compoundStateOnEntryAction.AssertExpectations(t)
@@ -682,14 +745,14 @@ func TestCanSendEventsWithSendAction(t *testing.T) {
 func TestCanDisableLocking(t *testing.T) {
 	assert := assert.New(t)
 
-	compoundStateMachine, err := brainy.NewMachine(brainy.StateNode{
+	stateMachine, err := brainy.NewMachine(brainy.StateNode{
 		Initial: OnState,
 
 		States: brainy.StateNodes{
 			OnState: &brainy.StateNode{},
 		},
 	}, brainy.WithDisableLocking())
-	assert.NotNil(compoundStateMachine)
+	assert.NotNil(stateMachine)
 	assert.NoError(err)
 }
 
@@ -720,4 +783,137 @@ func TestGivesGlobalContextDuringInitialTransition(t *testing.T) {
 	assert.NoError(err)
 
 	initialStateOnEntryAction.AssertExpectations(t)
+}
+
+func TestBlankTargetTriggersNoEntryActionsNorExitActions(t *testing.T) {
+	assert := assert.New(t)
+
+	const (
+		InternalEvent brainy.EventType = "INTERNAL"
+	)
+
+	rootOnEntryAction := new(mocks.Action)
+	rootOnEntryAction.On("Execute", mock.Anything, mock.Anything).Return(nil)
+
+	rootOnExitAction := new(mocks.Action)
+	rootOnExitAction.On("Execute", mock.Anything, mock.Anything).Return(nil)
+
+	atomicOnEntryAction := new(mocks.Action)
+	atomicOnEntryAction.On("Execute", mock.Anything, mock.Anything).Return(nil)
+
+	atomicOnExitAction := new(mocks.Action)
+	atomicOnExitAction.On("Execute", mock.Anything, mock.Anything).Return(nil)
+
+	internalEventTransitionAction := new(mocks.Action)
+	internalEventTransitionAction.On("Execute", mock.Anything, mock.Anything).Return(nil)
+
+	stateMachine, err := brainy.NewMachine(brainy.StateNode{
+		Initial: AtomicState,
+
+		OnEntry: brainy.Actions{
+			brainy.ActionFn(rootOnEntryAction.Execute),
+		},
+
+		OnExit: brainy.Actions{
+			brainy.ActionFn(rootOnExitAction.Execute),
+		},
+
+		States: brainy.StateNodes{
+			AtomicState: &brainy.StateNode{
+				OnEntry: brainy.Actions{
+					brainy.ActionFn(atomicOnEntryAction.Execute),
+				},
+
+				OnExit: brainy.Actions{
+					brainy.ActionFn(atomicOnExitAction.Execute),
+				},
+
+				On: brainy.Events{
+					InternalEvent: brainy.Transition{
+						Target: nil,
+						Actions: brainy.Actions{
+							brainy.ActionFn(internalEventTransitionAction.Execute),
+						},
+					},
+				},
+			},
+		},
+	})
+	assert.NotNil(stateMachine)
+	assert.NoError(err)
+
+	assert.True(stateMachine.Current().Matches(AtomicState))
+
+	nextState, err := stateMachine.Send(InternalEvent)
+	assert.NoError(err)
+	assert.True(nextState.Matches(AtomicState))
+	assert.True(stateMachine.Current().Matches(AtomicState))
+
+	rootOnEntryAction.AssertExpectations(t)
+	rootOnEntryAction.AssertNumberOfCalls(t, "Execute", 1)
+	rootOnExitAction.AssertNumberOfCalls(t, "Execute", 0)
+	atomicOnEntryAction.AssertExpectations(t)
+	atomicOnEntryAction.AssertNumberOfCalls(t, "Execute", 1)
+	atomicOnExitAction.AssertNumberOfCalls(t, "Execute", 0)
+	internalEventTransitionAction.AssertExpectations(t)
+	internalEventTransitionAction.AssertNumberOfCalls(t, "Execute", 1)
+}
+
+// Test that children states can only be targeted using a CompoundTarget.
+// This is due to the fact that transitions can only occur between sibbling states.
+// To target a child state, we must first target the state itself, that is itself sibbling,
+// and then target the child state.
+func TestResolvesChildTransitionsCorrectly(t *testing.T) {
+	assert := assert.New(t)
+
+	invalidCompoundStateMachine, err := brainy.NewMachine(brainy.StateNode{
+		Initial: CompoundState,
+
+		States: brainy.StateNodes{
+			CompoundState: &brainy.StateNode{
+				Initial: NestedAState,
+
+				States: brainy.StateNodes{
+					NestedAState: &brainy.StateNode{},
+
+					NestedBState: &brainy.StateNode{},
+				},
+
+				On: brainy.Events{
+					GoToNestedBStateEvent: brainy.Transition{
+						Target: NestedBState,
+					},
+				},
+			},
+		},
+	})
+	assert.Nil(invalidCompoundStateMachine)
+	assert.Error(err)
+	assert.ErrorIs(err, brainy.ErrInvalidTransitionNotImplemented)
+
+	validCompoundStateMachine, err := brainy.NewMachine(brainy.StateNode{
+		Initial: CompoundState,
+
+		States: brainy.StateNodes{
+			CompoundState: &brainy.StateNode{
+				Initial: NestedAState,
+
+				States: brainy.StateNodes{
+					NestedAState: &brainy.StateNode{},
+
+					NestedBState: &brainy.StateNode{},
+				},
+
+				On: brainy.Events{
+					GoToNestedBStateEvent: brainy.Transition{
+						Target: brainy.CompoundTarget{
+							CompoundState: NestedBState,
+						},
+					},
+				},
+			},
+		},
+	})
+	assert.NotNil(validCompoundStateMachine)
+	assert.NoError(err)
 }

@@ -1,20 +1,20 @@
 package brainy
 
-type EventsQueue struct {
+type eventsQueue struct {
 	events []Event
 }
 
-func NewEventsQueue() *EventsQueue {
-	return &EventsQueue{
+func newEventsQueue() *eventsQueue {
+	return &eventsQueue{
 		events: make([]Event, 0),
 	}
 }
 
-func (q *EventsQueue) Add(event Event) {
+func (q *eventsQueue) Add(event Event) {
 	q.events = append(q.events, event)
 }
 
-func (q *EventsQueue) Poll() (Event, bool) {
+func (q *eventsQueue) Poll() (Event, bool) {
 	eventsCount := len(q.events)
 	if eventsCount == 0 {
 		return nil, false
