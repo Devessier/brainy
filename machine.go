@@ -2,7 +2,6 @@ package brainy
 
 import (
 	"errors"
-	"strconv"
 	"strings"
 	"sync"
 )
@@ -96,7 +95,6 @@ const (
 // as well as the index of this action in the slice of transitions and the type of the action.
 type ErrAction struct {
 	Type actionType
-	ID   int
 	Err  error
 }
 
@@ -105,7 +103,7 @@ func (err *ErrAction) Unwrap() error {
 }
 
 func (err *ErrAction) Error() string {
-	return "error in " + string(err.Type) + " action of index: " + strconv.Itoa(err.ID) + ": " + err.Err.Error()
+	return "error in " + string(err.Type) + ": " + err.Err.Error()
 }
 
 // StateType represents a state described in the state machine.
@@ -408,6 +406,14 @@ func (s StateNode) isCompound() bool {
 	return !s.isAtomic()
 }
 
+func (s *StateNode) getInitialStateNode() *StateNode {
+	if isNotCompoundState := !s.isCompound(); isNotCompoundState {
+		return nil
+	}
+
+	return s.States[s.Initial]
+}
+
 func (s *StateNode) resolveMostNestedInitialStateNode() *StateNode {
 	if !s.isCompound() {
 		return s
@@ -427,6 +433,7 @@ func (s *StateNode) getTarget(t Targeter) (*StateNode, bool) {
 
 	for _, childStateNode := range s.States {
 		if stateNodeIDBeginsWithTargetID := strings.HasPrefix(childStateNode.id, expectedIDBeginning); stateNodeIDBeginsWithTargetID {
+			// FIXME: do we really want to return the most nested initial node?
 			return childStateNode.resolveMostNestedInitialStateNode(), true
 		}
 
@@ -453,11 +460,14 @@ func executeActioner(actioner Actioner, machine *Machine, context Context, event
 	return nil
 }
 
-func (s *StateNode) getProperAncestors() []*StateNode {
+// getProperAncestors returns all the ancestors of s StateNode if ancestorLimit is nil.
+// Otherwise it returns s StateNode ancestors up to but not including ancestorLimit.
+// Ancestors are returned in ancestry order.
+func (s *StateNode) getProperAncestors(ancestorLimit *StateNode) []*StateNode {
 	ancestors := make([]*StateNode, 0)
 	stateNode := s.parentStateNode
 
-	for stateNode != nil {
+	for !(stateNode == ancestorLimit || stateNode == nil) {
 		ancestors = append(ancestors, stateNode)
 
 		stateNode = stateNode.parentStateNode
@@ -466,8 +476,8 @@ func (s *StateNode) getProperAncestors() []*StateNode {
 	return ancestors
 }
 
-func (s *StateNode) getCompoundAncestors() []*StateNode {
-	ancestors := s.getProperAncestors()
+func (s *StateNode) getCompoundAncestors(ancestorLimit *StateNode) []*StateNode {
+	ancestors := s.getProperAncestors(ancestorLimit)
 	compoundAncestors := make([]*StateNode, 0, len(ancestors))
 
 	for _, ancestor := range ancestors {
@@ -511,7 +521,7 @@ func findLeastCommonCompoundAncestor(stateNodes []*StateNode) *StateNode {
 	}
 
 	referenceStateNode := stateNodes[0]
-	referenceStateNodeAncestors := referenceStateNode.getCompoundAncestors()
+	referenceStateNodeAncestors := referenceStateNode.getCompoundAncestors(nil)
 	stateNodesToCompare := stateNodes[1:]
 
 	for _, ancestor := range referenceStateNodeAncestors {
@@ -523,38 +533,38 @@ func findLeastCommonCompoundAncestor(stateNodes []*StateNode) *StateNode {
 	return nil
 }
 
-func (s *StateNode) executeOnEntryActions(c Context, e Event, leastCommonCompoundAncestor *StateNode, isTransitionInternal bool) error {
-	actionsToCall := make([]Actioner, 0)
+// func (s *StateNode) executeOnEntryActions(c Context, e Event, leastCommonCompoundAncestor *StateNode, isTransitionInternal bool) error {
+// 	actionsToCall := make([]Actioner, 0)
 
-	stateNodeToEntry := s
+// 	stateNodeToEntry := s
 
-	for stateNodeToEntry != leastCommonCompoundAncestor {
-		if onEntryActions := stateNodeToEntry.OnEntry; onEntryActions != nil {
-			actionsToCall = append(actionsToCall, onEntryActions...)
-		}
+// 	for stateNodeToEntry != leastCommonCompoundAncestor {
+// 		if onEntryActions := stateNodeToEntry.OnEntry; onEntryActions != nil {
+// 			actionsToCall = append(actionsToCall, onEntryActions...)
+// 		}
 
-		stateNodeToEntry = stateNodeToEntry.parentStateNode
-	}
+// 		stateNodeToEntry = stateNodeToEntry.parentStateNode
+// 	}
 
-	countOfActions := len(actionsToCall)
-	actionsToCallInReverseOrder := make([]Actioner, countOfActions)
+// 	countOfActions := len(actionsToCall)
+// 	actionsToCallInReverseOrder := make([]Actioner, countOfActions)
 
-	for index, action := range actionsToCall {
-		actionsToCallInReverseOrder[countOfActions-index-1] = action
-	}
+// 	for index, action := range actionsToCall {
+// 		actionsToCallInReverseOrder[countOfActions-index-1] = action
+// 	}
 
-	for index, actioner := range actionsToCallInReverseOrder {
-		if err := executeActioner(actioner, s.machine, c, e); err != nil {
-			return &ErrAction{
-				Type: onEntryActionType,
-				ID:   index,
-				Err:  err,
-			}
-		}
-	}
+// 	for index, actioner := range actionsToCallInReverseOrder {
+// 		if err := executeActioner(actioner, s.machine, c, e); err != nil {
+// 			return &ErrAction{
+// 				Type: onEntryActionType,
+// 				ID:   index,
+// 				Err:  err,
+// 			}
+// 		}
+// 	}
 
-	return nil
-}
+// 	return nil
+// }
 
 func (s *StateNode) executeOnExitActions(c Context, e Event, leastCommonCompoundAncestor *StateNode, isTransitionInternal bool) error {
 	stateNodeToExit := s
@@ -565,7 +575,6 @@ func (s *StateNode) executeOnExitActions(c Context, e Event, leastCommonCompound
 				if err := executeActioner(actioner, s.machine, c, e); err != nil {
 					return &ErrAction{
 						Type: onExitActionType,
-						ID:   index,
 						Err:  err,
 					}
 				}
@@ -671,8 +680,10 @@ type Machine struct {
 
 	externalEvents *EventsQueue
 
-	previous *StateNode
-	current  *StateNode
+	// configuration holds all the state nodes that are currently active
+	configuration stateNodesSet
+	previous      *StateNode
+	current       *StateNode
 
 	disableLocking bool
 	lock           sync.Mutex
@@ -759,27 +770,114 @@ func (machine *Machine) selectTransition(transitions []Transition, event Event) 
 	return Transition{}, false
 }
 
-func (machine *Machine) resolveStateNodeToEnter(stateNodeWithHandler *StateNode, transitionToExecute Transition) (*StateNode, error) {
-	stateNodeToEnter := stateNodeWithHandler
-	if target := transitionToExecute.Target; !transitionToExecute.isTargetBlank() {
+// getEffectiveTargetState returns
+func (machine *Machine) getEffectiveTargetState(transition resolvedTransition) *StateNode {
+	stateNodeToEnter := transition.Source
+	if target := transition.Target; !transition.isTargetBlank() {
 		// Get parent node to be able to target sibbling state nodes.
-		parentStateNode := stateNodeWithHandler.parentStateNode
+		parentStateNode := transition.Source.parentStateNode
 		if parentStateNode == nil {
-			return nil, errors.New("parent state node is nil")
+			return nil
 		}
 
 		resolvedTargetStateNode, ok := parentStateNode.getTarget(target)
 		if !ok {
-			return nil, errors.New("could not resolve target")
+			return nil
 		}
 
 		stateNodeToEnter = resolvedTargetStateNode
 	}
 
-	return stateNodeToEnter, nil
+	return stateNodeToEnter
 }
 
-func (machine *Machine) executeMicrotask(stateNodeToEnter *StateNode, transitionToExecute Transition, event Event) error {
+type resolvedTransition struct {
+	Transition
+
+	Source         *StateNode
+	ResolvedTarget *StateNode
+}
+
+func (machine *Machine) getTransitionDomain(transition resolvedTransition) *StateNode {
+	target := machine.getEffectiveTargetState(transition)
+
+	if target == nil {
+		return nil
+	}
+
+	if transition.Internal && transition.Source.isCompound() && allStateNodesAreAncestorDescendant([]*StateNode{target}, transition.Source) {
+		return transition.Source
+	}
+
+	return findLeastCommonCompoundAncestor([]*StateNode{transition.Source, target})
+}
+
+func (machine *Machine) addDescendantStatesToEnter(state *StateNode, statesToEnter *stateNodesSet) {
+	statesToEnter.Add(state)
+
+	if state.isCompound() {
+		initialState := state.getInitialStateNode()
+
+		machine.addDescendantStatesToEnter(initialState, statesToEnter)
+		machine.addAncestorStatesToEnter(initialState, state, statesToEnter)
+	}
+}
+
+func (machine *Machine) addAncestorStatesToEnter(state *StateNode, ancestor *StateNode, statesToEnter *stateNodesSet) {
+	ancestors := state.getProperAncestors(ancestor)
+
+	for _, ancestor := range ancestors {
+		statesToEnter.Add(ancestor)
+	}
+}
+
+func (machine *Machine) computeEntrySet(transition resolvedTransition) *stateNodesSet {
+	var entrySet *stateNodesSet
+
+	if hasTarget := !transition.isTargetBlank(); hasTarget {
+		machine.addDescendantStatesToEnter(transition.ResolvedTarget, entrySet)
+	}
+
+	ancestor := machine.getTransitionDomain(transition)
+	machine.addAncestorStatesToEnter(transition.ResolvedTarget, ancestor, entrySet)
+
+	return entrySet
+}
+
+func (machine *Machine) computeExitSet(transition resolvedTransition) *stateNodesSet {
+	var exitSet *stateNodesSet
+
+	if hasTarget := !transition.isTargetBlank(); hasTarget {
+		machine.addDescendantStatesToEnter(transition.ResolvedTarget, exitSet)
+	}
+
+	return exitSet
+}
+
+func (machine *Machine) enterStates(transition resolvedTransition, context Context, event Event) error {
+	statesToEnter := machine.computeEntrySet(transition)
+
+	for _, stateToEnter := range statesToEnter.ToSlice() {
+		machine.configuration.Add(stateToEnter)
+
+		for _, actioner := range stateToEnter.OnEntry {
+			if err := executeActioner(actioner, machine, context, event); err != nil {
+				return &ErrAction{
+					Type: onEntryActionType,
+					Err:  err,
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func (machine *Machine) exitStates(transition resolvedTransition) {
+	statesToExit := machine.computeExitSet(transition)
+}
+
+func (machine *Machine) executeMicrostep(stateNodeToEnter *StateNode, transitionToExecute Transition, event Event) error {
 	isTransitionInternal := transitionToExecute.Internal
 	leastCommonCompoundAncestor := findLeastCommonCompoundAncestor([]*StateNode{machine.current, stateNodeToEnter})
 
@@ -850,7 +948,7 @@ func (machine *Machine) handleExternalEvent(event Event) error {
 		return err
 	}
 
-	if err := machine.executeMicrotask(stateNodeToEnter, transitionToExecute, event); err != nil {
+	if err := machine.executeMicrostep(stateNodeToEnter, transitionToExecute, event); err != nil {
 		return err
 	}
 
