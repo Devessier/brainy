@@ -292,10 +292,9 @@ type Cond func(Context, Event) bool
 // can be used to do fire-and-forget actions, or to assign values to the context of the state machine,
 // as currently there is no built-in assign action in brainy.
 type Transition struct {
-	Cond     Cond
-	Target   Targeter
-	Internal bool
-	Actions  Actions
+	Cond    Cond
+	Target  Targeter
+	Actions Actions
 }
 
 func (t Transition) isTargetBlank() bool {
@@ -523,7 +522,7 @@ func findLeastCommonCompoundAncestor(stateNodes []*StateNode) *StateNode {
 	return nil
 }
 
-func (s *StateNode) executeOnEntryActions(c Context, e Event, leastCommonCompoundAncestor *StateNode, isTransitionInternal bool) error {
+func (s *StateNode) executeOnEntryActions(c Context, e Event, leastCommonCompoundAncestor *StateNode) error {
 	actionsToCall := make([]Actioner, 0)
 
 	stateNodeToEntry := s
@@ -556,7 +555,7 @@ func (s *StateNode) executeOnEntryActions(c Context, e Event, leastCommonCompoun
 	return nil
 }
 
-func (s *StateNode) executeOnExitActions(c Context, e Event, leastCommonCompoundAncestor *StateNode, isTransitionInternal bool) error {
+func (s *StateNode) executeOnExitActions(c Context, e Event, leastCommonCompoundAncestor *StateNode) error {
 	stateNodeToExit := s
 
 	for stateNodeToExit != leastCommonCompoundAncestor {
@@ -712,7 +711,7 @@ func (machine *Machine) init() error {
 	}
 
 	machine.current = machine.StateNode.resolveMostNestedInitialStateNode()
-	if err := machine.current.executeOnEntryActions(machine.StateNode.Context, InitialTransitionEventType, nil, false); err != nil {
+	if err := machine.current.executeOnEntryActions(machine.StateNode.Context, InitialTransitionEventType, nil); err != nil {
 		return err
 	}
 
@@ -780,11 +779,10 @@ func (machine *Machine) resolveStateNodeToEnter(stateNodeWithHandler *StateNode,
 }
 
 func (machine *Machine) executeMicrotask(stateNodeToEnter *StateNode, transitionToExecute Transition, event Event) error {
-	isTransitionInternal := transitionToExecute.Internal
 	leastCommonCompoundAncestor := findLeastCommonCompoundAncestor([]*StateNode{machine.current, stateNodeToEnter})
 
 	if !transitionToExecute.isTargetBlank() {
-		if err := machine.current.executeOnExitActions(machine.StateNode.Context, event, leastCommonCompoundAncestor, isTransitionInternal); err != nil {
+		if err := machine.current.executeOnExitActions(machine.StateNode.Context, event, leastCommonCompoundAncestor); err != nil {
 			return err
 		}
 	}
@@ -802,7 +800,7 @@ func (machine *Machine) executeMicrotask(stateNodeToEnter *StateNode, transition
 	}
 
 	if !transitionToExecute.isTargetBlank() {
-		if err := stateNodeToEnter.executeOnEntryActions(machine.StateNode.Context, event, leastCommonCompoundAncestor, isTransitionInternal); err != nil {
+		if err := stateNodeToEnter.executeOnEntryActions(machine.StateNode.Context, event, leastCommonCompoundAncestor); err != nil {
 			return err
 		}
 	}
