@@ -50,7 +50,9 @@ func TestOnOffMachine(t *testing.T) {
 	nextState, err = onOffMachine.Send(OnEvent)
 	assert.True(nextState.Matches(OnState))
 	assert.Error(err)
-	assert.ErrorIs(err, brainy.ErrInvalidTransitionNotImplemented)
+	assert.ErrorIs(err, &brainy.ErrNoHandlerToHandleEvent{
+		Event: OnEvent,
+	})
 
 	nextState, err = onOffMachine.Send(OffEvent)
 	assert.NoError(err)
@@ -328,7 +330,9 @@ func TestStateMachineWithTransitionsWithoutTargets(t *testing.T) {
 	assert.NotNil(nextState)
 	assert.True(nextState.Matches(IncrementState))
 	assert.Error(err)
-	assert.ErrorIs(err, brainy.ErrInvalidTransitionNotImplemented)
+	assert.ErrorIs(err, &brainy.ErrNoHandlerToHandleEvent{
+		Event: UnknownEventType,
+	})
 	assert.Equal(3, stateMachineContext.ToIncrement)
 }
 
