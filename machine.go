@@ -41,6 +41,44 @@ var (
 	ErrNoTransitionCouldBeRun = errors.New("no transition could be run, due to all guards having returned false")
 )
 
+// ErrNoHandlerToHandleEvent is returned when an event could not be handled.
+// This is not a fatal error, but just an indication that a event to the state
+// machine could not be intercepted.
+type ErrNoHandlerToHandleEvent struct {
+	Event Event
+}
+
+func (err *ErrNoHandlerToHandleEvent) Error() string {
+	return "no handler to handle the event: " + string(err.Event.eventType())
+}
+
+// Is returns whether the target error is a ErrNoHandlerToHandleEvent error
+// and if its Event is the same as err's one.
+func (err *ErrNoHandlerToHandleEvent) Is(target error) bool {
+	t, ok := target.(*ErrNoHandlerToHandleEvent)
+	if !ok {
+		return false
+	}
+
+	return t.Event == err.Event
+}
+
+// ErrInvalidTransitionNotImplementedWithDetails is returned when a transition definition
+// was found invalid, during state machine configuration validation.
+// It unwraps as a ErrInvalidTransitionNotImplemented error and adds context about the failing transition.
+type ErrInvalidTransitionNotImplementedWithDetails struct {
+	From   *StateNode
+	Target Targeter
+}
+
+func (err *ErrInvalidTransitionNotImplementedWithDetails) Error() string {
+	return "transition not implemented (source: " + err.From.id + ", target: " + err.Target.String() + ")"
+}
+
+func (err *ErrInvalidTransitionNotImplementedWithDetails) Unwrap() error {
+	return ErrInvalidTransitionNotImplemented
+}
+
 type ErrInvalidInitialState struct {
 	InvalidInitialState StateType
 }
@@ -611,7 +649,10 @@ func (s *StateNode) validate(m *Machine) error {
 				}
 
 				if _, hasTarget := s.getTarget(target); !hasTarget {
-					return ErrInvalidTransitionNotImplemented
+					return &ErrInvalidTransitionNotImplementedWithDetails{
+						From:   stateNode,
+						Target: target,
+					}
 				}
 			}
 		}
@@ -834,7 +875,9 @@ func (machine *Machine) handleExternalEvent(event Event) error {
 	eventType := event.eventType()
 	stateNodeWithHandler, eventHandler := machine.resolveStateNodeWithHandler(eventType)
 	if stateNodeWithHandler == nil {
-		return ErrInvalidTransitionNotImplemented
+		return &ErrNoHandlerToHandleEvent{
+			Event: event,
+		}
 	}
 
 	transitions := eventHandler.transitions()
