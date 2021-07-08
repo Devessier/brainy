@@ -655,19 +655,13 @@ func (s *StateNode) validate(m *Machine) error {
 					continue
 				}
 
-				if _, hasTarget := s.getTarget(target); !hasTarget {
+				_, err := s.machine.resolveStateNodeToEnter(stateNode, transition)
+				if err != nil {
 					return &ErrInvalidTransitionNotImplementedWithDetails{
 						From:   stateNode,
 						Target: target,
 					}
 				}
-			}
-		}
-
-		// Recursively validate children states
-		if stateNode.isCompound() {
-			if err := stateNode.validate(m); err != nil {
-				return err
 			}
 		}
 	}
