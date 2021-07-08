@@ -634,6 +634,13 @@ func (s *StateNode) validate(m *Machine) error {
 		// Set the parentStateNode of each state node
 		stateNode.parentStateNode = s
 
+		// Recursively validate children states
+		if stateNode.isCompound() {
+			if err := stateNode.validate(m); err != nil {
+				return err
+			}
+		}
+
 		handlers := stateNode.On
 		if handlers == nil {
 			continue

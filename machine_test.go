@@ -921,3 +921,36 @@ func TestResolvesChildTransitionsCorrectly(t *testing.T) {
 	assert.NotNil(validCompoundStateMachine)
 	assert.NoError(err)
 }
+
+func TestChildrenOfCompoundStateCanTransitionToSiblings(t *testing.T) {
+	assert := assert.New(t)
+
+	compoundStateMachine, err := brainy.NewMachine(brainy.StateNode{
+		Initial: CompoundState,
+
+		States: brainy.StateNodes{
+			CompoundState: &brainy.StateNode{
+				Initial: NestedAState,
+
+				States: brainy.StateNodes{
+					NestedAState: &brainy.StateNode{
+						On: brainy.Events{
+							GoToNestedBStateEvent: NestedBState,
+						},
+					},
+
+					NestedBState: &brainy.StateNode{},
+				},
+			},
+		},
+	})
+	assert.NotNil(compoundStateMachine)
+	assert.NoError(err)
+	assert.True(compoundStateMachine.Current().Matches(CompoundState, NestedAState))
+
+	nextState, err := compoundStateMachine.Send(GoToNestedBStateEvent)
+	assert.NotNil(nextState)
+	assert.NoError(err)
+	assert.True(nextState.Matches(CompoundState, NestedBState))
+	assert.True(compoundStateMachine.Current().Matches(CompoundState, NestedBState))
+}
