@@ -454,20 +454,13 @@ func (s *StateNode) resolveMostNestedInitialStateNode() *StateNode {
 	return initialStateNode.resolveMostNestedInitialStateNode()
 }
 
-func (s *StateNode) getTarget(t Targeter) (*StateNode, bool) {
-	targetID := t.String()
-	baseStateNode := s.id
-	if s.parentStateNode != nil {
-		baseStateNode = s.parentStateNode.id
-	}
-	expectedIDBeginning := joinStatesIDs(baseStateNode, targetID)
-
+func (s *StateNode) getTarget(target Targeter, expectedIDBeginning string) (*StateNode, bool) {
 	for _, childStateNode := range s.States {
 		if stateNodeIDBeginsWithTargetID := strings.HasPrefix(childStateNode.id, expectedIDBeginning); stateNodeIDBeginsWithTargetID {
 			return childStateNode.resolveMostNestedInitialStateNode(), true
 		}
 
-		if matchingChildStateNode, ok := childStateNode.getTarget(t); ok {
+		if matchingChildStateNode, ok := childStateNode.getTarget(target, expectedIDBeginning); ok {
 			return matchingChildStateNode, true
 		}
 	}
@@ -634,6 +627,13 @@ func (s *StateNode) validate(m *Machine) error {
 		// Set the parentStateNode of each state node
 		stateNode.parentStateNode = s
 
+		// Recursively validate children states
+		if stateNode.isCompound() {
+			if err := stateNode.validate(m); err != nil {
+				return err
+			}
+		}
+
 		handlers := stateNode.On
 		if handlers == nil {
 			continue
@@ -648,19 +648,13 @@ func (s *StateNode) validate(m *Machine) error {
 					continue
 				}
 
-				if _, hasTarget := s.getTarget(target); !hasTarget {
+				_, err := s.machine.resolveStateNodeToEnter(stateNode, transition)
+				if err != nil {
 					return &ErrInvalidTransitionNotImplementedWithDetails{
 						From:   stateNode,
 						Target: target,
 					}
 				}
-			}
-		}
-
-		// Recursively validate children states
-		if stateNode.isCompound() {
-			if err := stateNode.validate(m); err != nil {
-				return err
 			}
 		}
 	}
@@ -808,7 +802,10 @@ func (machine *Machine) resolveStateNodeToEnter(stateNodeWithHandler *StateNode,
 			return nil, errors.New("parent state node is nil")
 		}
 
-		resolvedTargetStateNode, ok := parentStateNode.getTarget(target)
+		targetID := target.String()
+		expectedIDBeginning := joinStatesIDs(parentStateNode.id, targetID)
+
+		resolvedTargetStateNode, ok := parentStateNode.getTarget(target, expectedIDBeginning)
 		if !ok {
 			return nil, errors.New("could not resolve target")
 		}
