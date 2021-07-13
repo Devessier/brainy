@@ -796,16 +796,20 @@ func (machine *Machine) selectTransition(transitions []Transition, event Event) 
 func (machine *Machine) resolveStateNodeToEnter(stateNodeWithHandler *StateNode, transitionToExecute Transition) (*StateNode, error) {
 	stateNodeToEnter := stateNodeWithHandler
 	if target := transitionToExecute.Target; !transitionToExecute.isTargetBlank() {
-		// Get parent node to be able to target sibbling state nodes.
-		parentStateNode := stateNodeWithHandler.parentStateNode
-		if parentStateNode == nil {
-			return nil, errors.New("parent state node is nil")
+		// The state node from which we will resolve the target is either
+		// the root state node of the state machine or the parent state node
+		// of the one that handled the event.
+		var stateNodeResolvingPoint *StateNode
+		if isParentRootStateNode := stateNodeWithHandler.parentStateNode == nil; isParentRootStateNode {
+			stateNodeResolvingPoint = stateNodeWithHandler
+		} else {
+			stateNodeResolvingPoint = stateNodeWithHandler.parentStateNode
 		}
 
 		targetID := target.String()
-		expectedIDBeginning := joinStatesIDs(parentStateNode.id, targetID)
+		expectedIDBeginning := joinStatesIDs(stateNodeResolvingPoint.id, targetID)
 
-		resolvedTargetStateNode, ok := parentStateNode.getTarget(target, expectedIDBeginning)
+		resolvedTargetStateNode, ok := stateNodeResolvingPoint.getTarget(target, expectedIDBeginning)
 		if !ok {
 			return nil, errors.New("could not resolve target")
 		}

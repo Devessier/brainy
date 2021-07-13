@@ -864,8 +864,8 @@ func TestBlankTargetTriggersNoEntryActionsNorExitActions(t *testing.T) {
 }
 
 // Test that children states can only be targeted using a CompoundTarget.
-// This is due to the fact that transitions can only occur between sibbling states.
-// To target a child state, we must first target the state itself, that is itself sibbling,
+// This is due to the fact that transitions can only occur between sibling states.
+// To target a child state, we must first target the state itself, that is itself sibling,
 // and then target the child state.
 func TestResolvesChildTransitionsCorrectly(t *testing.T) {
 	assert := assert.New(t)
@@ -947,6 +947,41 @@ func TestChildrenOfCompoundStateCanTransitionToSiblings(t *testing.T) {
 	assert.NotNil(compoundStateMachine)
 	assert.NoError(err)
 	assert.True(compoundStateMachine.Current().Matches(CompoundState, NestedAState))
+
+	nextState, err := compoundStateMachine.Send(GoToNestedBStateEvent)
+	assert.NotNil(nextState)
+	assert.NoError(err)
+	assert.True(nextState.Matches(CompoundState, NestedBState))
+	assert.True(compoundStateMachine.Current().Matches(CompoundState, NestedBState))
+}
+
+func TestTransitionFromRootStateNode(t *testing.T) {
+	assert := assert.New(t)
+
+	compoundStateMachine, err := brainy.NewMachine(brainy.StateNode{
+		Initial: AtomicState,
+
+		States: brainy.StateNodes{
+			CompoundState: &brainy.StateNode{
+				Initial: NestedBState,
+
+				States: brainy.StateNodes{
+					NestedBState: &brainy.StateNode{},
+				},
+			},
+
+			AtomicState: &brainy.StateNode{},
+		},
+
+		On: brainy.Events{
+			GoToNestedBStateEvent: brainy.Transition{
+				Target: CompoundState,
+			},
+		},
+	})
+	assert.NotNil(compoundStateMachine)
+	assert.NoError(err)
+	assert.True(compoundStateMachine.Current().Matches(AtomicState))
 
 	nextState, err := compoundStateMachine.Send(GoToNestedBStateEvent)
 	assert.NotNil(nextState)
