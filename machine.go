@@ -794,30 +794,30 @@ func (machine *Machine) selectTransition(transitions []Transition, event Event) 
 }
 
 func (machine *Machine) resolveStateNodeToEnter(stateNodeWithHandler *StateNode, transitionToExecute Transition) (*StateNode, error) {
-	stateNodeToEnter := stateNodeWithHandler
-	if target := transitionToExecute.Target; !transitionToExecute.isTargetBlank() {
-		// The state node from which we will resolve the target is either
-		// the root state node of the state machine or the parent state node
-		// of the one that handled the event.
-		var stateNodeResolvingPoint *StateNode
-		if isParentRootStateNode := stateNodeWithHandler.parentStateNode == nil; isParentRootStateNode {
-			stateNodeResolvingPoint = stateNodeWithHandler
-		} else {
-			stateNodeResolvingPoint = stateNodeWithHandler.parentStateNode
-		}
-
-		targetID := target.String()
-		expectedIDBeginning := joinStatesIDs(stateNodeResolvingPoint.id, targetID)
-
-		resolvedTargetStateNode, ok := stateNodeResolvingPoint.getTarget(target, expectedIDBeginning)
-		if !ok {
-			return nil, errors.New("could not resolve target")
-		}
-
-		stateNodeToEnter = resolvedTargetStateNode
+	target := transitionToExecute.Target
+	if transitionToExecute.isTargetBlank() {
+		return machine.current, nil
 	}
 
-	return stateNodeToEnter, nil
+	// The state node from which we will resolve the target is either
+	// the root state node of the state machine or the parent state node
+	// of the one that handled the event.
+	var stateNodeResolvingPoint *StateNode
+	if isParentRootStateNode := stateNodeWithHandler.parentStateNode == nil; isParentRootStateNode {
+		stateNodeResolvingPoint = stateNodeWithHandler
+	} else {
+		stateNodeResolvingPoint = stateNodeWithHandler.parentStateNode
+	}
+
+	targetID := target.String()
+	expectedIDBeginning := joinStatesIDs(stateNodeResolvingPoint.id, targetID)
+
+	resolvedTargetStateNode, ok := stateNodeResolvingPoint.getTarget(target, expectedIDBeginning)
+	if !ok {
+		return nil, errors.New("could not resolve target")
+	}
+
+	return resolvedTargetStateNode, nil
 }
 
 func (machine *Machine) executeMicrotask(stateNodeToEnter *StateNode, transitionToExecute Transition, event Event) error {
