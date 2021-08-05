@@ -336,6 +336,81 @@ func TestStateMachineWithTransitionsWithoutTargets(t *testing.T) {
 	assert.Equal(3, stateMachineContext.ToIncrement)
 }
 
+func TestStateMachineWithChildStatesAndRootTransitionWithoutTarget(t *testing.T) {
+	assert := assert.New(t)
+
+	stateMachineContext := IncrementStateMachineContext{
+		ToIncrement: 0,
+	}
+
+	incrementVariableInContextMachine, err := brainy.NewMachine(brainy.StateNode{
+		Initial: OnState,
+
+		Context: &stateMachineContext,
+
+		States: brainy.StateNodes{
+			OnState: &brainy.StateNode{
+				On: brainy.Events{
+					OffEvent: OffState,
+				},
+			},
+
+			OffState: &brainy.StateNode{
+				On: brainy.Events{
+					OnEvent: OnState,
+				},
+			},
+		},
+
+		On: brainy.Events{
+			IncrementEventType: brainy.Transitions{
+				brainy.Transition{
+					Actions: brainy.Actions{
+						brainy.ActionFn(
+							func(c brainy.Context, e brainy.Event) error {
+								ctx := c.(*IncrementStateMachineContext)
+
+								switch ev := e.(type) {
+								case IncrementEvent:
+									ctx.ToIncrement += ev.IncrementBy
+								default:
+									ctx.ToIncrement += 1
+								}
+
+								return nil
+							},
+						),
+					},
+				},
+			},
+		},
+	})
+	assert.NoError(err)
+
+	assert.Equal(0, stateMachineContext.ToIncrement)
+
+	nextState, err := incrementVariableInContextMachine.Send(NewIncrementEvent(2))
+	assert.NotNil(nextState)
+	assert.True(nextState.Matches(OnState))
+	assert.NoError(err)
+	assert.Equal(2, stateMachineContext.ToIncrement)
+
+	nextState, err = incrementVariableInContextMachine.Send(IncrementEventType)
+	assert.NotNil(nextState)
+	assert.True(nextState.Matches(OnState))
+	assert.NoError(err)
+	assert.Equal(3, stateMachineContext.ToIncrement)
+
+	nextState, err = incrementVariableInContextMachine.Send(UnknownEventType)
+	assert.NotNil(nextState)
+	assert.True(nextState.Matches(OnState))
+	assert.Error(err)
+	assert.ErrorIs(err, &brainy.ErrNoHandlerToHandleEvent{
+		Event: UnknownEventType,
+	})
+	assert.Equal(3, stateMachineContext.ToIncrement)
+}
+
 func TestOnlyOneTransitionCanBeTaken(t *testing.T) {
 	assert := assert.New(t)
 
